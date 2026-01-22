@@ -5,7 +5,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 import altair as alt
 import matplotlib.pyplot as plt
-from scipy import stats, chi2_contingency
+from scipy import stats  
+from scipy.stats import chi2_contingency  
 from statsmodels.formula.api import ols
 from statsmodels.stats.anova import anova_lm
 from sklearn.cluster import KMeans
