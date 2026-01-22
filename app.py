@@ -22,7 +22,7 @@ st.title("📊 科研数据分析助手（增强版）")
 st.markdown("**支持多文件上传+自定义图表+全面分析功能**")
 st.divider()
 
-# ---------------------- 2. 多文件上传与合并处理 ----------------------
+# ---------------------- 2. 多文件上传与合并处理（修复CSV编码问题）----------------------
 st.subheader("第一步：上传多个数据文件（支持跨文件分析）")
 # 支持多文件上传
 uploaded_files = st.file_uploader(
@@ -35,15 +35,28 @@ if not uploaded_files:
     st.info("💡 示例：上传1个或多个包含「分组变量」「数值变量」的表格，支持跨文件合并分析")
     st.stop()
 
-# 读取所有上传的文件
+# 读取所有上传的文件（核心修复：新增多编码兼容逻辑）
 df_list = []
 file_names = []
+# 常见中文CSV编码列表（解决中文CSV解码失败问题）
+encodings = ['utf-8', 'gbk', 'gb2312', 'latin-1']
+
 for file in uploaded_files:
     try:
         if file.name.endswith(".csv"):
-            df = pd.read_csv(file)
-        else:
+            # 尝试多种编码读取CSV，兼容中文文件
+            df = None
+            for encoding in encodings:
+                try:
+                    df = pd.read_csv(file, encoding=encoding)
+                    break  # 编码成功则停止尝试
+                except UnicodeDecodeError:
+                    continue
+            if df is None:
+                raise ValueError("所有编码尝试均失败，无法读取该CSV文件（建议转换为UTF-8或GBK编码）")
+        else:  # Excel文件无编码问题，正常读取
             df = pd.read_excel(file)
+        
         df_list.append(df)
         file_names.append(file.name)
         st.success(f"✅ 成功读取文件：{file.name}（行数：{len(df)}，列数：{len(df.columns)}）")
