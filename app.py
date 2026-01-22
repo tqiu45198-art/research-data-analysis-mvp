@@ -43,6 +43,11 @@ def clean_column_names(df):
     df.columns = [col if col else f"col_{i}" for i, col in enumerate(df.columns)]
     return df
 
+def fix_df_list_columns(df):
+    if len(df.columns) >= 2:
+        df.columns = ['Location', '中文名称']
+    return df
+
 for file in uploaded_files:
     try:
         file_content = file.read()
@@ -52,20 +57,32 @@ for file in uploaded_files:
         
         if file.name.endswith(".csv"):
             df = None
-            for encoding in encodings:
-                for sep in seps:
-                    try:
-                        if encoding == 'utf-16':
-                            content = file_content.decode(encoding, errors='replace')
-                            df = pd.read_csv(io.StringIO(content), sep=sep)
-                        else:
+            if file.name == "df_list.csv":
+                for encoding in ['utf-8-sig', 'gbk']:
+                    for sep in [',', '\t']:
+                        try:
                             df = pd.read_csv(file, encoding=encoding, sep=sep, on_bad_lines='skip')
-                        df = clean_column_names(df)
+                            df = fix_df_list_columns(df)
+                            break
+                        except:
+                            continue
+                    if df is not None:
                         break
-                    except (UnicodeDecodeError, pd.errors.EmptyDataError, pd.errors.ParserError, ValueError):
-                        continue
-                if df is not None:
-                    break
+            else:
+                for encoding in encodings:
+                    for sep in seps:
+                        try:
+                            if encoding == 'utf-16':
+                                content = file_content.decode(encoding, errors='replace')
+                                df = pd.read_csv(io.StringIO(content), sep=sep)
+                            else:
+                                df = pd.read_csv(file, encoding=encoding, sep=sep, on_bad_lines='skip')
+                            df = clean_column_names(df)
+                            break
+                        except:
+                            continue
+                    if df is not None:
+                        break
             if df is None:
                 try:
                     from csv import Sniffer
@@ -73,7 +90,10 @@ for file in uploaded_files:
                     sample = file_content[:1024].decode('utf-8-sig', errors='replace')
                     delimiter = sniffer.sniff(sample).delimiter
                     df = pd.read_csv(file, encoding='utf-8-sig', sep=delimiter, on_bad_lines='skip')
-                    df = clean_column_names(df)
+                    if file.name == "df_list.csv":
+                        df = fix_df_list_columns(df)
+                    else:
+                        df = clean_column_names(df)
                 except:
                     raise ValueError("所有编码/分隔符尝试均失败，无法读取该CSV文件")
         else:
