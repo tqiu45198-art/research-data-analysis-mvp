@@ -1,12 +1,15 @@
-# 基础 Web 与数据处理
-streamlit>=1.35.0
+# 核心框架
+streamlit>=1.32.0
+# 2026 DeepSeek API依赖（OpenAI兼容）
+openai>=1.30.0
+# 数据分析核心库
 pandas>=2.2.0
 numpy>=1.26.0
-matplotlib>=3.8.0
-plotly>=5.20.0
-openpyxl>=3.1.0
-factor_analyzer>=0.5.1
 scipy>=1.12.0
-statsmodels>=0.14.1
+statsmodels>=0.14.0
 scikit-learn>=1.4.0
-requests>=2.31.0
+# 可视化库
+matplotlib>=3.8.0
+plotly>=5.19.0
+# Excel文件读取
+openpyxl>=3.1.0
