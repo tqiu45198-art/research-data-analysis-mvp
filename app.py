@@ -17,7 +17,7 @@ import re
 import os
 from datetime import datetime
 from dotenv import load_dotenv
-from langchain.chat_models import ChatDeepSeek
+from langchain_deepseek.chat_models import ChatDeepSeek
 from langchain_experimental.tools import PythonAstREPLTool
 from langchain.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.prompts import ChatPromptTemplate
