@@ -17,8 +17,11 @@ import re
 import os
 from datetime import datetime
 from dotenv import load_dotenv
+
+# ---------------------- LangChain 正确导入（核心修正）----------------------
 from langchain_deepseek.chat_models import ChatDeepSeek
 from langchain_experimental.tools import PythonAstREPLTool
+# 必须从 langchain.agents 单独导入，且确保 langchain-community 已安装
 from langchain.agents import AgentExecutor
 from langchain.agents import create_tool_calling_agent
 from langchain_core.prompts import ChatPromptTemplate
@@ -111,21 +114,25 @@ def identify_variable_types(df):
         'datetime': datetime_cols
     }
 
+# ---------------------- LangChain AI 初始化（确保无报错）----------------------
 @st.cache_resource(show_spinner="初始化AI引擎...")
 def init_ai_agent(df):
     api_key = os.getenv("DEEPSEEK_API_KEY")
     if not api_key:
         st.error("❌ 未配置API密钥，请检查.env文件或部署环境变量")
         return None
+    # 初始化 DeepSeek 大模型
     llm = ChatDeepSeek(
         model="deepseek-chat",
         api_key=api_key,
         temperature=0.3
     )
+    # 初始化代码执行工具
     tool = PythonAstREPLTool(
         locals={"df": df, "pd": pd, "np": np, "plt": plt, "px": px, "alt": alt, "stats": stats},
         description="执行Python数据分析代码，可访问df数据集"
     )
+    # AI 提示词
     system_prompt = """
     你是科研数据分析专家，基于df数据集完成专业分析：
     1. 先输出数据概况（规模、变量类型、缺失值）；
@@ -134,12 +141,14 @@ def init_ai_agent(df):
     4. 结合本科生科研场景解读结果，避免纯技术术语；
     5. 生成结构化结论，含统计学依据（如p值、R²）。
     """
+    # 构建 Prompt
     prompt = ChatPromptTemplate.from_messages([
         SystemMessage(content=system_prompt),
         ("placeholder", "{chat_history}"),
         ("human", "{input}"),
         ("placeholder", "{agent_scratchpad}")
     ])
+    # 创建 Agent 并返回 Executor
     agent = create_tool_calling_agent(llm, [tool], prompt)
     return AgentExecutor(agent=agent, tools=[tool], verbose=False, handle_parsing_errors="请生成正确Python代码")
 
@@ -147,13 +156,12 @@ def auto_ai_analysis(df):
     agent_executor = init_ai_agent(df)
     if not agent_executor:
         return "AI初始化失败"
-    auto_query = """
-    完成：1.数据概况；2.数值变量统计；3.2个以上核心分析；4.1个可视化图表；5.3条科研结论
-    """
+    auto_query = "完成：1.数据概况；2.数值变量统计；3.2个以上核心分析；4.1个可视化图表；5.3条科研结论"
     with st.spinner("🤖 AI自主分析中..."):
         response = agent_executor.invoke({"input": auto_query, "chat_history": []})
     return response["output"]
 
+# ---------------------- 页面核心逻辑（不变）----------------------
 st.title("🤖 AI驱动科研数据分析平台")
 st.markdown("**低代码操作 · 自然语言交互 · 专业报告生成**")
 st.divider()
