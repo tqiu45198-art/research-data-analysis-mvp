@@ -22,7 +22,6 @@ from langchain_deepseek.chat_models import ChatDeepSeek
 from langchain_experimental.tools import PythonAstREPLTool
 from langchain.agents import create_agent
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.messages import SystemMessage
 
 warnings.filterwarnings('ignore')
 load_dotenv()
@@ -143,12 +142,11 @@ def init_ai_agent(df):
         MessagesPlaceholder("agent_scratchpad"),
     ])
 
-    # 使用最新的 create_agent（LangChain 1.0+ 推荐方式）
+    # LangChain 1.0+ / 1.1+ 标准方式
     agent = create_agent(
-        model=llm,
+        llm=llm,
         tools=[tool],
         prompt=prompt,
-        # 可選：添加 middleware、checkpointer 等高級功能
     )
 
     return agent
@@ -161,15 +159,13 @@ def auto_ai_analysis(df):
     auto_query = "完成：1.数据概况；2.数值变量统计；3.2个以上核心分析；4.1个可视化图表；5.3条科研结论"
 
     with st.spinner("🤖 AI自主分析中..."):
-        # LangChain 1.0+ 推薦直接 .invoke()
-        response = agent.invoke({
+        result = agent.invoke({
             "input": auto_query,
             "chat_history": [],
         })
 
-    return response["output"]
+    return result.get("output", "分析完成，但未返回有效文本输出")
 
-# ────────────────────── 主頁面邏輯 ──────────────────────
 st.title("🤖 AI驱动科研数据分析平台")
 st.markdown("**低代码操作 · 自然语言交互 · 专业报告生成**")
 st.divider()
@@ -204,33 +200,31 @@ with st.sidebar:
                 df_other = df_dict[other_file]
                 common_cols = [col for col in df.columns if col in df_other.columns]
                 base_key = st.selectbox(
-                    f"基础文件关联字段 ({other_file})",
+                    f"基础文件关联字段",
                     common_cols if common_cols else df.columns,
                     key=f"base_{other_file}"
                 )
                 join_key = st.selectbox(
-                    f"关联文件关联字段 ({other_file})",
+                    f"关联文件关联字段",
                     common_cols if common_cols else df_other.columns,
                     key=f"join_{other_file}"
                 )
                 if st.button(f"关联[{other_file}]", key=f"btn_{other_file}"):
                     df = pd.merge(
-                        df, df_other,
-                        left_on=base_key, right_on=join_key,
+                        df, df_other, left_on=base_key, right_on=join_key,
                         how="left", suffixes=("", f"_{other_file.split('.')[0]}")
                     )
                     st.success(f"✅ 关联后：{len(df)}行 × {len(df.columns)}列")
-        elif df_dict:
-            df = list(df_dict.values())[0]
+        else:
+            if df_dict:
+                df = list(df_dict.values())[0]
 
         if df is not None:
             var_types = identify_variable_types(df)
             st.markdown('<div class="sidebar-header">4. 变量类型</div>', unsafe_allow_html=True)
             st.write(f"📈 数值型：{', '.join(var_types['numeric'][:4])}{'...' if len(var_types['numeric'])>4 else ''}")
             st.write(f"🏷️ 分类型：{', '.join(var_types['categorical'][:4])}{'...' if len(var_types['categorical'])>4 else ''}")
-            total_cells = len(df) * len(df.columns)
-            missing_pct = df.isnull().sum().sum() / total_cells * 100 if total_cells > 0 else 0
-            st.write(f"❌ 缺失值：{df.isnull().sum().sum()}个（{missing_pct:.1f}%）")
+            st.write(f"❌ 缺失值：{df.isnull().sum().sum()}个（{df.isnull().sum().sum()/(len(df)*len(df.columns))*100:.1f}%）")
 
 if df is not None:
     col1, col2 = st.columns([3, 2])
@@ -247,42 +241,43 @@ if df is not None:
         <p>⏰ 时间列：{len(var_types['datetime'])}个</p>
         </div>
         """, unsafe_allow_html=True)
-
     st.divider()
     tab1, tab2 = st.tabs(["🤖 AI自动分析", "💬 自然语言提问"])
-
     with tab1:
         if "ai_report" not in st.session_state:
             st.session_state["ai_report"] = None
-
         if st.button("🚀 启动AI分析", type="primary"):
             st.session_state["ai_report"] = auto_ai_analysis(df)
-
-        if st.session_state["ai_report"]:
+        if st.session_state.get("ai_report"):
             st.subheader("📊 AI分析报告")
             st.markdown(f'<div class="ai-report">{st.session_state["ai_report"]}</div>', unsafe_allow_html=True)
             if os.path.exists("plot.png"):
                 st.subheader("📈 生成图表")
                 st.image("plot.png", use_container_width=True)
-                os.remove("plot.png")
-
+                try:
+                    os.remove("plot.png")
+                except:
+                    pass
     with tab2:
         st.subheader("输入分析需求（示例：分析两种教学方法对成绩的影响）")
         user_query = st.text_area("自然语言描述你的需求", placeholder="1. 分析城市与订单量的相关性\n2. 按性别分组对比分数差异")
-        if st.button("提交提问") and user_query:
+        if st.button("提交提问") and user_query.strip():
             agent = init_ai_agent(df)
             if agent:
                 with st.spinner("🤖 处理中..."):
-                    response = agent.invoke({
+                    result = agent.invoke({
                         "input": user_query,
                         "chat_history": [],
                     })
                 st.subheader("💡 分析结果")
-                st.markdown(f'<div class="ai-report">{response["output"]}</div>', unsafe_allow_html=True)
+                output_text = result.get("output", "无有效输出，请检查提示词或工具执行")
+                st.markdown(f'<div class="ai-report">{output_text}</div>', unsafe_allow_html=True)
                 if os.path.exists("plot.png"):
                     st.image("plot.png", use_container_width=True)
-                    os.remove("plot.png")
-
+                    try:
+                        os.remove("plot.png")
+                    except:
+                        pass
     if st.session_state.get("ai_report"):
         st.divider()
         report_content = f"""# AI科研数据分析报告
