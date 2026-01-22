@@ -5,26 +5,53 @@ import matplotlib.pyplot as plt
 import plotly.express as px
 import plotly.graph_objects as go
 from scipy import stats
-from scipy.stats import chi2_contingency, ttest_1samp, ttest_ind, ttest_rel, binom_test, ks_2samp, mannwhitneyu, kruskal, friedmanchisquare, wilcoxon
-from statsmodels.stats.proportion import binom_test as sm_binom_test
-from statsmodels.stats.contingency_tables import mcnemar
-from statsmodels.formula.api import ols, glm
-from statsmodels.stats.anova import anova_lm
-from statsmodels.stats.multicomp import pairwise_tukeyhsd
-from statsmodels.stats.correlation_tools import corr_nearest
-from statsmodels.stats.outliers_influence import variance_inflation_factor
-from sklearn.cluster import KMeans, AgglomerativeClustering
-from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.linear_model import LinearRegression, LogisticRegression
-from sklearn.metrics import r2_score, classification_report
-from factor_analyzer import FactorAnalyzer
-from scipy.cluster.hierarchy import dendrogram, linkage
 import warnings
 import io
 import re
 import os
 from datetime import datetime
+
+# 核心修改1：分批次导入scipy.stats函数 + 异常处理（避免导入失败崩溃）
+try:
+    from scipy.stats import chi2_contingency, ttest_1samp, ttest_ind, ttest_rel
+    from scipy.stats import binom_test, ks_2samp, mannwhitneyu, kruskal
+    from scipy.stats import friedmanchisquare, wilcoxon
+    SCIPY_IMPORTED = True
+except ImportError as e:
+    st.warning(f"部分统计函数导入失败：{str(e)}，基础功能仍可使用")
+    SCIPY_IMPORTED = False
+
+# 核心修改2：延迟导入非核心依赖（降低启动风险）
+try:
+    from statsmodels.stats.proportion import binom_test as sm_binom_test
+    from statsmodels.stats.contingency_tables import mcnemar
+    from statsmodels.formula.api import ols, glm
+    from statsmodels.stats.anova import anova_lm
+    from statsmodels.stats.multicomp import pairwise_tukeyhsd
+    from statsmodels.stats.correlation_tools import corr_nearest
+    from statsmodels.stats.outliers_influence import variance_inflation_factor
+    STATSMODELS_IMPORTED = True
+except ImportError:
+    st.warning("statsmodels导入失败，方差分析/回归相关功能受限")
+    STATSMODELS_IMPORTED = False
+
+try:
+    from sklearn.cluster import KMeans, AgglomerativeClustering
+    from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+    from sklearn.preprocessing import StandardScaler, LabelEncoder
+    from sklearn.linear_model import LinearRegression, LogisticRegression
+    from sklearn.metrics import r2_score, classification_report
+    SKLEARN_IMPORTED = True
+except ImportError:
+    st.warning("sklearn导入失败，聚类/回归相关功能受限")
+    SKLEARN_IMPORTED = False
+
+try:
+    from factor_analyzer import FactorAnalyzer
+    FACTOR_ANALYZER_IMPORTED = True
+except ImportError:
+    st.warning("factor_analyzer导入失败，因子分析功能不可用")
+    FACTOR_ANALYZER_IMPORTED = False
 
 warnings.filterwarnings('ignore')
 plt.rcParams['font.sans-serif'] = ['SimHei']
@@ -112,11 +139,11 @@ def explore_analysis(df, numeric_col):
     lower = q1 - 1.5 * iqr
     upper = q3 + 1.5 * iqr
     outliers = df[(df[numeric_col] < lower) | (df[numeric_col] > upper)][numeric_col]
-    normality = stats.shapiro(df[numeric_col].dropna())
+    normality = stats.shapiro(df[numeric_col].dropna()) if SCIPY_IMPORTED else {"W值": "N/A", "p值": "N/A"}
     return {
         '四分位距': iqr.round(2),
         '异常值数量': len(outliers),
-        'Shapiro-Wilk正态性检验': {'W值': normality[0].round(3), 'p值': normality[1].round(4)},
+        'Shapiro-Wilk正态性检验': {'W值': normality[0].round(3) if SCIPY_IMPORTED else "N/A", 'p值': normality[1].round(4) if SCIPY_IMPORTED else "N/A"},
         '最小值': df[numeric_col].min(),
         '最大值': df[numeric_col].max(),
         '中位数': df[numeric_col].median(),
@@ -125,6 +152,8 @@ def explore_analysis(df, numeric_col):
     }
 
 def contingency_table_analysis(df, col1, col2):
+    if not SCIPY_IMPORTED:
+        return {"error": "scipy未导入，无法执行卡方检验"}
     cont_table = pd.crosstab(df[col1], df[col2])
     chi2, p, dof, expected = chi2_contingency(cont_table)
     cramers_v = np.sqrt(chi2 / (len(df) * min(cont_table.shape[0]-1, cont_table.shape[1]-1)))
@@ -137,11 +166,15 @@ def contingency_table_analysis(df, col1, col2):
     }
 
 def t_test_onesample(df, numeric_col, popmean):
+    if not SCIPY_IMPORTED:
+        return {"error": "scipy未导入，无法执行t检验"}
     data = df[numeric_col].dropna()
     t_stat, p_value = ttest_1samp(data, popmean)
     return {'t值': t_stat.round(3), 'p值': p_value.round(4), '均值': data.mean().round(2), '样本量': len(data)}
 
 def t_test_independent(df, numeric_col, group_col):
+    if not SCIPY_IMPORTED:
+        return {"error": "scipy未导入，无法执行t检验"}
     groups = df[group_col].unique()
     if len(groups) != 2:
         return {'error': '分组变量必须为二分类'}
@@ -158,11 +191,15 @@ def t_test_independent(df, numeric_col, group_col):
     }
 
 def t_test_paired(df, col1, col2):
+    if not SCIPY_IMPORTED:
+        return {"error": "scipy未导入，无法执行t检验"}
     paired_data = df[[col1, col2]].dropna()
     t_stat, p_value = ttest_rel(paired_data[col1], paired_data[col2])
     return {'t值': t_stat.round(3), 'p值': p_value.round(4), '差值均值': (paired_data[col1]-paired_data[col2]).mean().round(2), '样本量': len(paired_data)}
 
 def nonparametric_test(df, test_type, numeric_col, group_col=None):
+    if not SCIPY_IMPORTED:
+        return {"error": "scipy未导入，无法执行非参数检验"}
     if test_type == '单样本K-S检验':
         data = df[numeric_col].dropna()
         ks_stat, p_value = stats.kstest(data, 'norm', args=(data.mean(), data.std()))
@@ -196,6 +233,8 @@ def nonparametric_test(df, test_type, numeric_col, group_col=None):
     return {'error': '无效检验类型'}
 
 def anova_analysis(df, formula, anova_type):
+    if not STATSMODELS_IMPORTED:
+        return {"error": "statsmodels未导入，无法执行方差分析"}
     model = ols(formula, data=df).fit()
     if anova_type == '单因素方差分析':
         anova_result = anova_lm(model, typ=2)
@@ -209,6 +248,8 @@ def anova_analysis(df, formula, anova_type):
     return {'方差分析表': anova_result, '事后检验(Tukey)': tukey.summary()}
 
 def correlation_analysis(df, cols, corr_type='pearson'):
+    if not SCIPY_IMPORTED:
+        return {"error": "scipy未导入，无法执行相关分析"}
     corr_df = df[cols].dropna()
     if corr_type == 'pearson':
         corr_matrix = corr_df.corr(method='pearson')
@@ -233,6 +274,8 @@ def correlation_analysis(df, cols, corr_type='pearson'):
     return {'相关矩阵': corr_matrix.round(3), 'p值矩阵': p_matrix}
 
 def regression_analysis(df, target, features, reg_type):
+    if not SKLEARN_IMPORTED:
+        return {"error": "sklearn未导入，无法执行回归分析"}
     X = df[features].dropna()
     y = df[target][X.index].dropna()
     X = X.loc[y.index]
@@ -255,6 +298,8 @@ def regression_analysis(df, target, features, reg_type):
     return {'error': '无效回归类型'}
 
 def cluster_analysis(df, cols, cluster_type, n_clusters=3):
+    if not SKLEARN_IMPORTED:
+        return {"error": "sklearn未导入，无法执行聚类分析"}
     X = df[cols].dropna()
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
@@ -265,9 +310,11 @@ def cluster_analysis(df, cols, cluster_type, n_clusters=3):
         centroids = pd.DataFrame(scaler.inverse_transform(kmeans.cluster_centers_), columns=cols).round(2)
         return {'聚类结果': df_cluster, '聚类中心': centroids}
     elif cluster_type == '系统聚类':
-        Z = linkage(X_scaled, method='ward')
+        Z = stats.cluster.hierarchy.linkage(X_scaled, method='ward') if SCIPY_IMPORTED else None
+        if Z is None:
+            return {"error": "scipy未导入，无法生成系统聚类树状图"}
         fig, ax = plt.subplots(figsize=(10, 6))
-        dendrogram(Z, labels=X.index, ax=ax)
+        stats.cluster.hierarchy.dendrogram(Z, labels=X.index, ax=ax)
         plt.title('系统聚类树状图')
         plt.tight_layout()
         buf = io.BytesIO()
@@ -277,6 +324,8 @@ def cluster_analysis(df, cols, cluster_type, n_clusters=3):
     return {'error': '无效聚类类型'}
 
 def factor_analysis(df, cols, n_factors=3):
+    if not FACTOR_ANALYZER_IMPORTED:
+        return {"error": "factor_analyzer未导入，无法执行因子分析"}
     X = df[cols].dropna()
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
@@ -293,6 +342,8 @@ def factor_analysis(df, cols, n_factors=3):
     return {'因子载荷矩阵': loadings, '特征值': eigen_values.round(3), '方差贡献率': variance_df}
 
 def reliability_analysis(df, cols):
+    if not SCIPY_IMPORTED:
+        return {"error": "scipy未导入，无法执行信度分析"}
     cronbach_alpha = stats.stats.cronbach_alpha(df[cols].dropna())[0].round(3)
     item_total_corr = []
     for col in cols:
@@ -321,7 +372,14 @@ def plot_chart(df, plot_type, x_col, y_col=None, group_col=None):
     fig.update_layout(width=800, height=500)
     return fig
 
+# 核心修改3：添加依赖检查提示
 st.title("🔬 科研数据分析平台（SPSS核心功能版）")
+st.divider()
+st.markdown("### 环境依赖状态")
+st.write(f"- scipy（统计核心）：{'✅ 已导入' if SCIPY_IMPORTED else '❌ 未导入'}")
+st.write(f"- statsmodels（方差分析）：{'✅ 已导入' if STATSMODELS_IMPORTED else '❌ 未导入'}")
+st.write(f"- sklearn（聚类/回归）：{'✅ 已导入' if SKLEARN_IMPORTED else '❌ 未导入'}")
+st.write(f"- factor_analyzer（因子分析）：{'✅ 已导入' if FACTOR_ANALYZER_IMPORTED else '❌ 未导入'}")
 st.divider()
 
 with st.sidebar:
@@ -502,9 +560,12 @@ if df is not None:
                 cont_col2 = st.selectbox("列变量", var_types['categorical'], key='cont2')
                 if st.button("执行联列表分析"):
                     cont_res = contingency_table_analysis(df, cont_col1, cont_col2)
-                    st.markdown("#### 联列表")
-                    st.dataframe(cont_res['联列表'], use_container_width=True)
-                    st.write(f"卡方值：{cont_res['卡方值']}, p值：{cont_res['p值']}, 克莱姆V系数：{cont_res['克莱姆V系数']}")
+                    if 'error' in cont_res:
+                        st.error(cont_res['error'])
+                    else:
+                        st.markdown("#### 联列表")
+                        st.dataframe(cont_res['联列表'], use_container_width=True)
+                        st.write(f"卡方值：{cont_res['卡方值']}, p值：{cont_res['p值']}, 克莱姆V系数：{cont_res['克莱姆V系数']}")
     
     with tab3:
         st.subheader("均值检验")
@@ -516,7 +577,10 @@ if df is not None:
                 popmean = st.number_input("总体均值", value=0.0)
                 if st.button("执行单样本t检验"):
                     onesamp_res = t_test_onesample(df, onesamp_col, popmean)
-                    st.write(f"t值：{onesamp_res['t值']}, p值：{onesamp_res['p值']}, 样本均值：{onesamp_res['均值']}")
+                    if 'error' in onesamp_res:
+                        st.error(onesamp_res['error'])
+                    else:
+                        st.write(f"t值：{onesamp_res['t值']}, p值：{onesamp_res['p值']}, 样本均值：{onesamp_res['均值']}")
             
             st.markdown("#### 两独立样本t检验")
             if var_types['numeric'] and var_types['categorical']:
@@ -537,7 +601,10 @@ if df is not None:
                 pair_col2 = st.selectbox("配对变量2", var_types['numeric'], key='pair2')
                 if st.button("执行配对样本t检验"):
                     pair_res = t_test_paired(df, pair_col1, pair_col2)
-                    st.write(f"t值：{pair_res['t值']}, p值：{pair_res['p值']}, 差值均值：{pair_res['差值均值']}")
+                    if 'error' in pair_res:
+                        st.error(pair_res['error'])
+                    else:
+                        st.write(f"t值：{pair_res['t值']}, p值：{pair_res['p值']}, 差值均值：{pair_res['差值均值']}")
         
         with test_tab2:
             st.markdown("#### 非参数检验")
@@ -603,24 +670,27 @@ if df is not None:
             corr_cols = st.multiselect("选择变量", var_types['numeric'])
             if corr_cols and len(corr_cols)>=2 and st.button("执行相关分析"):
                 corr_res = correlation_analysis(df, corr_cols, corr_type)
-                st.markdown("#### 相关矩阵")
-                st.dataframe(corr_res['相关矩阵'], use_container_width=True)
-                if corr_res['p值矩阵'] is not None:
-                    st.markdown("#### p值矩阵")
-                    st.dataframe(corr_res['p值矩阵'], use_container_width=True)
-                fig, ax = plt.subplots(figsize=(10, 8))
-                im = ax.imshow(corr_res['相关矩阵'], cmap='RdBu_r', vmin=-1, vmax=1)
-                ax.set_xticks(np.arange(len(corr_cols)))
-                ax.set_yticks(np.arange(len(corr_cols)))
-                ax.set_xticklabels(corr_cols, rotation=45, ha='right')
-                ax.set_yticklabels(corr_cols)
-                for i in range(len(corr_cols)):
-                    for j in range(len(corr_cols)):
-                        text = ax.text(j, i, corr_res['相关矩阵'].iloc[i, j], ha="center", va="center", color="black")
-                cbar = ax.figure.colorbar(im, ax=ax)
-                ax.set_title(f'{corr_type}相关系数热力图')
-                plt.tight_layout()
-                st.pyplot(fig)
+                if 'error' in corr_res:
+                    st.error(corr_res['error'])
+                else:
+                    st.markdown("#### 相关矩阵")
+                    st.dataframe(corr_res['相关矩阵'], use_container_width=True)
+                    if corr_res['p值矩阵'] is not None:
+                        st.markdown("#### p值矩阵")
+                        st.dataframe(corr_res['p值矩阵'], use_container_width=True)
+                    fig, ax = plt.subplots(figsize=(10, 8))
+                    im = ax.imshow(corr_res['相关矩阵'], cmap='RdBu_r', vmin=-1, vmax=1)
+                    ax.set_xticks(np.arange(len(corr_cols)))
+                    ax.set_yticks(np.arange(len(corr_cols)))
+                    ax.set_xticklabels(corr_cols, rotation=45, ha='right')
+                    ax.set_yticklabels(corr_cols)
+                    for i in range(len(corr_cols)):
+                        for j in range(len(corr_cols)):
+                            text = ax.text(j, i, corr_res['相关矩阵'].iloc[i, j], ha="center", va="center", color="black")
+                    cbar = ax.figure.colorbar(im, ax=ax)
+                    ax.set_title(f'{corr_type}相关系数热力图')
+                    plt.tight_layout()
+                    st.pyplot(fig)
     
     with tab6:
         st.subheader("回归分析")
@@ -669,19 +739,25 @@ if df is not None:
                 n_factors = st.slider("因子数", 2, 5, 3)
                 if factor_cols and st.button("执行因子分析"):
                     factor_res = factor_analysis(df, factor_cols, n_factors)
-                    st.markdown("#### 因子载荷矩阵")
-                    st.dataframe(factor_res['因子载荷矩阵'], use_container_width=True)
-                    st.markdown("#### 方差贡献率")
-                    st.dataframe(factor_res['方差贡献率'], use_container_width=True)
+                    if 'error' in factor_res:
+                        st.error(factor_res['error'])
+                    else:
+                        st.markdown("#### 因子载荷矩阵")
+                        st.dataframe(factor_res['因子载荷矩阵'], use_container_width=True)
+                        st.markdown("#### 方差贡献率")
+                        st.dataframe(factor_res['方差贡献率'], use_container_width=True)
         
         with advanced_tab3:
             if var_types['numeric'] and len(var_types['numeric'])>=3:
                 reli_cols = st.multiselect("选择信度分析变量", var_types['numeric'])
                 if reli_cols and st.button("执行信度分析"):
                     reli_res = reliability_analysis(df, reli_cols)
-                    st.write(f"克朗巴哈α系数：{reli_res['克朗巴哈α系数']}")
-                    st.markdown("#### 项目-总分相关")
-                    st.dataframe(reli_res['项目-总分相关'], use_container_width=True)
+                    if 'error' in reli_res:
+                        st.error(reli_res['error'])
+                    else:
+                        st.write(f"克朗巴哈α系数：{reli_res['克朗巴哈α系数']}")
+                        st.markdown("#### 项目-总分相关")
+                        st.dataframe(reli_res['项目-总分相关'], use_container_width=True)
     
     st.divider()
     st.subheader("可视化分析")
@@ -720,4 +796,3 @@ if df is not None:
 
 else:
     st.info("💡 请在左侧边栏上传CSV/Excel文件，支持多文件合并分析")
-
