@@ -136,27 +136,45 @@ else:
         join_type = st.radio(f"选择关联方式（文件 {i+1}）", options=["左关联（保留基础文件数据）", "内关联（仅保留匹配数据）"], key=f"join_type_{i}")
         join_map = {"左关联（保留基础文件数据）": "left", "内关联（仅保留匹配数据）": "inner"}
         
-        # 修复合并错误：用索引生成稳定后缀，避免文件名冲突
+        # 1. 检查关联字段是否存在
+        if base_key not in df.columns:
+            st.error(f"❌ 基础文件中不存在关联字段「{base_key}」，请重新选择")
+            break
+        if join_key not in df_to_join.columns:
+            st.error(f"❌ 关联文件中不存在关联字段「{join_key}」，请重新选择")
+            break
+        
+        # 2. 生成稳定后缀（仅重命名非关联字段）
         base_suffix = f"_base_{base_file_idx}"
-        join_suffix = f"_join_{i+1}"
+        join_suffix = f"_join_{i+1}_{file_name.split('.')[0]}"
         
-        # 合并前重命名非关联字段，避免列名冲突
-        df_to_join_renamed = df_to_join.rename(columns={col: f"{col}{join_suffix}" for col in df_to_join.columns if col != join_key})
-        df_renamed = df.rename(columns={col: f"{col}{base_suffix}" for col in df.columns if col != base_key})
+        # 3. 重命名非关联字段，关联字段保持原样
+        df_renamed = df.rename(columns={
+            col: f"{col}{base_suffix}" 
+            for col in df.columns 
+            if col != base_key
+        })
+        df_to_join_renamed = df_to_join.rename(columns={
+            col: f"{col}{join_suffix}" 
+            for col in df_to_join.columns 
+            if col != join_key
+        })
         
+        # 4. 安全合并
         try:
             df_merged = pd.merge(
-                df_renamed, 
-                df_to_join_renamed, 
-                left_on=f"{base_key}{base_suffix}" if base_key != base_key+base_suffix else base_key,
-                right_on=join_key, 
+                df_renamed,
+                df_to_join_renamed,
+                left_on=base_key,  # 关联字段保持原样，不重命名
+                right_on=join_key,
                 how=join_map[join_type]
             )
-            # 恢复基础文件的关联字段名
-            df_merged = df_merged.rename(columns={f"{base_key}{base_suffix}": base_key})
             df = df_merged
+        except KeyError as e:
+            st.error(f"❌ 合并失败：找不到关联字段「{e}」，请检查字段选择是否正确")
+            break
         except pd.errors.MergeError as e:
-            st.error(f"❌ 合并失败：列名冲突，请检查关联字段或尝试更换关联方式。错误详情：{str(e)}")
+            st.error(f"❌ 合并失败：列名冲突，错误详情：{str(e)}")
             break
         
         st.success(f"✅ 关联完成！{base_file_name}[{base_key}] ↔ {file_name}[{join_key}]，当前数据：{len(df)}行 × {len(df.columns)}列")
