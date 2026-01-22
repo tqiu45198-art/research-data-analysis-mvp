@@ -1,34 +1,12 @@
-# 一、基础Web与数据处理（交互层+数据加载）
-streamlit>=1.35.0  # 低代码Web交互框架（创业计划书交互层核心）
-pandas>=2.2.0      # 数据清洗与处理
-numpy>=1.26.0      # 数值计算基础
-openpyxl>=3.1.0    # 读取Excel文件（支持用户数据上传）
-python-multipart>=0.0.9  # 处理文件上传请求
-re>=2.2.1          # 正则表达式（列名清理）
-io>=0.4.1          # 内存文件处理（数据加载辅助）
+# 基础 Web 与数据处理
+streamlit>=1.35.0
+pandas>=2.2.0
+numpy>=1.26.0
+matplotlib>=3.8.0
+plotly>=5.20.0
+openpyxl>=3.1.0
 
-# 二、统计与机器学习（计算层核心）
-scipy>=1.12.0      # 科学计算与统计检验（如t检验、方差分析）
-statsmodels>=0.14.1 # 专业统计建模（回归、ANOVA等）
-scikit-learn>=1.4.0 # 机器学习算法（聚类、分类等）
-matplotlib>=3.8.0  # 基础可视化（科研图表生成）
-plotly>=5.20.0     # 交互式可视化（增强报告可读性）
-altair>=5.2.0      # 声明式可视化（补充图表类型）
-
-# 三、LangChain生态（认知与调度层）
-langchain>=0.2.10  # 核心调度框架（创业计划书认知与调度层核心）
-langchain-core>=0.2.10  # LangChain核心依赖（Agent、Prompt等）
-langchain-community>=0.2.9  # 社区组件（工具链、集成支持）
-langchain-experimental>=0.0.63  # 实验性工具（Python代码执行工具PythonAstREPLTool）
-
-# 四、大模型支持（领域微调模型适配）
-langchain-ollama>=0.1.0  # 本地Ollama模型集成（支持Llama 3-8B微调版）
-langchain-huggingface>=0.1.0  # HuggingFace模型/API集成（备选方案）
-transformers>=4.41.0  # 大模型加载与微调辅助（LoRA微调支持）
-peft>=0.11.0        # 高效参数微调（LoRA技术核心依赖）
-
-# 五、环境与工具（配置管理+稳定性）
-python-dotenv>=1.0.0  # 环境变量管理（API密钥、模型地址配置）
-warnings>=1.0.0      # 警告抑制（提升用户体验）
-datetime>=5.2        # 时间戳管理（报告生成时间记录）
-os-sys>=2.1.3       # 系统路径操作（图表保存、文件处理）
+# 统计与机器学习
+scipy>=1.12.0
+statsmodels>=0.14.1
+scikit-learn>=1.4.0
