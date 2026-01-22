@@ -56,9 +56,10 @@ for file in uploaded_files:
                 for sep in seps:
                     try:
                         if encoding == 'utf-16':
-                            df = pd.read_csv(io.StringIO(file_content.decode(encoding, errors='replace')), sep=sep)
+                            content = file_content.decode(encoding, errors='replace')
+                            df = pd.read_csv(io.StringIO(content), sep=sep)
                         else:
-                            df = pd.read_csv(file, encoding=encoding, sep=sep, on_bad_lines='skip', errors='replace')
+                            df = pd.read_csv(file, encoding=encoding, sep=sep, on_bad_lines='skip')
                         df = clean_column_names(df)
                         break
                     except (UnicodeDecodeError, pd.errors.EmptyDataError, pd.errors.ParserError, ValueError):
@@ -71,7 +72,7 @@ for file in uploaded_files:
                     sniffer = Sniffer()
                     sample = file_content[:1024].decode('utf-8-sig', errors='replace')
                     delimiter = sniffer.sniff(sample).delimiter
-                    df = pd.read_csv(file, encoding='utf-8-sig', sep=delimiter, on_bad_lines='skip', errors='replace')
+                    df = pd.read_csv(file, encoding='utf-8-sig', sep=delimiter, on_bad_lines='skip')
                     df = clean_column_names(df)
                 except:
                     raise ValueError("所有编码/分隔符尝试均失败，无法读取该CSV文件")
