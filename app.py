@@ -17,19 +17,19 @@ st.set_page_config(
     page_icon="📊",
     layout="wide"
 )
-st.title("📊 科研数据分析助手（增强版）")
-st.markdown("**支持多文件上传+自定义图表+全面分析功能**")
+st.title("📊 科研数据分析助手-增强版")
+st.markdown("**支持多文件上传+单文件独立分析+自定义图表**")
 st.divider()
 
-st.subheader("第一步：上传多个数据文件（支持跨文件分析）")
+st.subheader("第一步：上传数据文件（可上传多个，选择一个分析）")
 uploaded_files = st.file_uploader(
-    "支持Excel(.xlsx)或CSV(.csv)文件，可拖拽多个", 
+    "支持Excel(.xlsx)或CSV(.csv)文件，可上传多个", 
     type=["xlsx", "csv"],
     accept_multiple_files=True
 )
 
 if not uploaded_files:
-    st.info("💡 示例：上传1个或多个包含「分组变量」「数值变量」的表格，支持跨文件合并分析")
+    st.info("💡 示例：上传包含「数值变量/分类变量」的表格（如客户信息、订单数据、城市对照表）")
     st.stop()
 
 df_list = []
@@ -77,29 +77,9 @@ for file in uploaded_files:
         st.error(f"❌ 读取文件{file.name}失败：{str(e)}")
         st.stop()
 
-st.subheader("第二步：多文件合并设置（跨文件分析）")
-merge_type = st.radio(
-    "选择文件合并方式（单文件分析选「不合并」）",
-    options=["不合并（单文件分析）", "纵向合并（追加数据，字段需一致）", "横向合并（按关键字段关联）"]
-)
-
-if merge_type == "不合并（单文件分析）":
-    selected_file_idx = st.selectbox("选择要分析的文件", range(len(file_names)), format_func=lambda x: file_names[x])
-    df = df_list[selected_file_idx]
-elif merge_type == "纵向合并（追加数据）":
-    cols_set = [set(df.columns) for df in df_list]
-    if len(set(frozenset(cols) for cols in cols_set)) > 1:
-        st.warning("⚠️ 各文件字段不一致，将保留所有字段（缺失值填充为NaN）")
-    df = pd.concat(df_list, ignore_index=True)
-    st.success(f"✅ 纵向合并完成，合并后数据总行数：{len(df)}")
-else:
-    key_col = st.text_input("输入关联关键字段（所有文件需包含该字段，如「Location」「菏泽」「样本ID」）", placeholder="如：Location")
-    if not key_col:
-        st.stop()
-    df = df_list[0]
-    for i in range(1, len(df_list)):
-        df = pd.merge(df, df_list[i], on=key_col, how="outer", suffixes=(f"_{file_names[0].split('.')[0]}", f"_{file_names[i].split('.')[0]}"))
-    st.success(f"✅ 按「{key_col}」横向合并完成，合并后数据列数：{len(df.columns)}")
+st.subheader("第二步：选择要分析的文件")
+selected_file_idx = st.selectbox("从上传的文件中选择一个进行分析", range(len(file_names)), format_func=lambda x: file_names[x])
+df = df_list[selected_file_idx]
 
 st.subheader("数据预览（前5行）")
 st.dataframe(df.head(), use_container_width=True)
@@ -110,11 +90,11 @@ st.write(f"📈 数值型变量：{', '.join(numeric_cols) if numeric_cols else 
 st.write(f"🏷️ 分类变量：{', '.join(categorical_cols) if categorical_cols else '无'}")
 
 if not numeric_cols:
-    st.error("❌ 未识别到数值型变量！请确保数据中包含成绩、分数等可计算的列")
+    st.error("❌ 未识别到数值型变量！请确保文件包含可计算的数值列（如销量、金额、数量等）")
     st.stop()
 
 st.divider()
-st.subheader("第三步：选择分析类型（新增多因素方差/聚类/逻辑回归）")
+st.subheader("第三步：选择分析类型")
 analysis_type = st.radio(
     "选择分析类型",
     options=[
@@ -153,27 +133,27 @@ if target_analysis == "descriptive":
 
 elif target_analysis == "t_test":
     if not categorical_cols:
-        st.error("❌ 未识别到分类变量！无法进行t检验")
+        st.error("❌ 未识别到分类变量！无法进行t检验（需有分组列如Location、客户类型等）")
         st.stop()
-    params["group_col"] = st.selectbox("选择分组变量（如Location、菏泽、性别）", categorical_cols)
+    params["group_col"] = st.selectbox("选择分组变量（如Location、中文名称、客户类型）", categorical_cols)
     params["result_col"] = st.selectbox("选择要比较的数值变量", numeric_cols)
     group_counts = df[params["group_col"]].nunique()
     if group_counts != 2:
-        st.warning(f"⚠️ 分组变量有{group_counts}组，自动取前2组")
+        st.warning(f"⚠️ 分组变量有{group_counts}组，自动取样本量前2的组进行检验")
         top2_groups = df[params["group_col"]].value_counts().nlargest(2).index.tolist()
         df = df[df[params["group_col"]].isin(top2_groups)]
 
 elif target_analysis == "anova":
     if len(categorical_cols) < 1:
-        st.error("❌ 至少需要1个分类变量（因素）！无法进行方差分析")
+        st.error("❌ 未识别到分类变量！无法进行方差分析（需有因素列如Location、客户类型等）")
         st.stop()
-    params["factor_cols"] = st.multiselect("选择因素变量（分类变量，可多选，如Location、菏泽）", categorical_cols, default=categorical_cols[0])
+    params["factor_cols"] = st.multiselect("选择因素变量（分类变量，可多选，如Location、中文名称）", categorical_cols, default=categorical_cols[0])
     params["result_col"] = st.selectbox("选择因变量（数值变量）", numeric_cols)
     params["formula"] = f"{params['result_col']} ~ {' + '.join(params['factor_cols'])}"
 
 elif target_analysis == "regression":
     if len(numeric_cols) < 2:
-        st.error("❌ 至少需要2个数值变量！")
+        st.error("❌ 至少需要2个数值变量！无法进行线性回归")
         st.stop()
     params["x_col"] = st.selectbox("选择自变量", numeric_cols)
     params["y_col"] = st.selectbox("选择因变量", [col for col in numeric_cols if col != params["x_col"]])
@@ -181,7 +161,7 @@ elif target_analysis == "regression":
 elif target_analysis == "logistic_reg":
     binary_cats = [col for col in categorical_cols if df[col].nunique() == 2]
     if not binary_cats:
-        st.error("❌ 未识别到二分类变量！逻辑回归因变量需为二分类（如：及格/不及格、是/否）")
+        st.error("❌ 未识别到二分类变量！逻辑回归需因变量为二分类（如：是/否、达标/未达标）")
         st.stop()
     params["target_col"] = st.selectbox("选择预测目标（二分类变量）", binary_cats)
     params["feature_cols"] = st.multiselect("选择特征变量（数值型）", numeric_cols, default=numeric_cols[:2])
@@ -192,7 +172,7 @@ elif target_analysis == "kmeans":
     params["feature_cols"] = st.multiselect("选择聚类特征变量（数值型）", numeric_cols, default=numeric_cols[:2])
     df_cluster = df[params["feature_cols"]].dropna()
     if len(df_cluster) < params["n_clusters"]:
-        st.error(f"❌ 有效样本数（{len(df_cluster)}）小于聚类数量（{params['n_clusters']}）！")
+        st.error(f"❌ 有效样本数（{len(df_cluster)}）小于聚类数量（{params['n_clusters']}）！请减少K值或选择其他数值变量")
         st.stop()
 
 st.divider()
@@ -217,7 +197,7 @@ if st.button("🚀 开始分析"):
                     )
                 else:
                     fig = px.bar(
-                        df, y=col, title=f"{col}的均值",
+                        df, y=col, title=f"{col}的均值分布",
                         color_discrete_sequence=[params["chart_color"]],
                         width=params["chart_width"], height=params["chart_height"]
                     )
@@ -226,7 +206,8 @@ if st.button("🚀 开始分析"):
                 report = f"""
                 ### 📝 分析报告
                 1. 变量「{col}」核心统计：均值{stats_result['mean']:.2f}、中位数{stats_result['50%']:.2f}、标准差{stats_result['std']:.2f}；
-                2. 数据分布：{'均匀' if stats_result['std'] < stats_result['mean']*0.3 else '分散'}，整体水平{stats_result['mean']:.2f}。
+                2. 数据分布：{'均匀' if stats_result['std'] < stats_result['mean']*0.3 else '分散'}，整体水平{stats_result['mean']:.2f}；
+                3. 数据范围：最小值{stats_result['min']:.2f}，最大值{stats_result['max']:.2f}。
                 """
 
             elif target_analysis == "t_test":
@@ -238,11 +219,12 @@ if st.button("🚀 开始分析"):
                 t_stat, p_value = stats.ttest_ind(data1, data2, equal_var=False)
                 mean1, mean2 = data1.mean(), data2.mean()
                 
-                st.subheader("🔍 t检验结果")
-                st.write(f"{group1}均值：{mean1:.2f}，{group2}均值：{mean2:.2f}，p值：{p_value:.4f}")
+                st.subheader("🔍 独立样本t检验结果")
+                st.write(f"分组1（{group1}）均值：{mean1:.2f}，分组2（{group2}）均值：{mean2:.2f}")
+                st.write(f"t统计量：{t_stat:.4f}，p值：{p_value:.4f}")
                 
                 fig = px.box(
-                    df, x=group_col, y=result_col, title=f"{group_col}对{result_col}的影响",
+                    df, x=group_col, y=result_col, title=f"{group_col}对{result_col}的差异分析",
                     color_discrete_sequence=[params["chart_color"]],
                     width=params["chart_width"], height=params["chart_height"]
                 )
@@ -252,7 +234,8 @@ if st.button("🚀 开始分析"):
                 report = f"""
                 ### 📝 分析报告
                 1. 检验结论：{group1}与{group2}在{result_col}上的差异{significance}（p={p_value:.4f}）；
-                2. 差异幅度：{group1}比{group2} {'高' if mean1>mean2 else '低'} {abs(mean1-mean2):.2f}。
+                2. 差异幅度：{group1}比{group2} {'高' if mean1>mean2 else '低'} {abs(mean1-mean2):.2f}；
+                3. 统计依据：独立样本t检验（方差不齐），p<0.05代表差异有统计学意义。
                 """
 
             elif target_analysis == "anova":
@@ -266,7 +249,7 @@ if st.button("🚀 开始分析"):
                 fig = px.box(
                     df, x=params["factor_cols"][0], y=params["result_col"], 
                     color=params["factor_cols"][1] if len(params["factor_cols"])>1 else None,
-                    title=f"各因素对{params['result_col']}的影响",
+                    title=f"各因素对{params['result_col']}的影响分析",
                     color_discrete_sequence=[params["chart_color"]] if len(params["factor_cols"])==1 else None,
                     width=params["chart_width"], height=params["chart_height"]
                 )
@@ -277,7 +260,8 @@ if st.button("🚀 开始分析"):
                 ### 📝 分析报告
                 1. 方差分析公式：{formula}；
                 2. 显著影响因素（p<0.05）：{', '.join(significant_factors) if significant_factors else '无'}；
-                3. 结论：{f'因素{significant_factors}对{params["result_col"]}有显著影响' if significant_factors else '所有因素对因变量无显著影响'}。
+                3. 结论：{f'因素{significant_factors}对{params["result_col"]}有显著影响' if significant_factors else '所有因素对因变量无显著影响'}；
+                4. 统计依据：p<0.05代表该因素对结果的影响有统计学意义。
                 """
 
             elif target_analysis == "regression":
@@ -288,12 +272,12 @@ if st.button("🚀 开始分析"):
                 coef = model.params[x_col]
                 p_value = model.pvalues[x_col]
                 
-                st.subheader("📈 线性回归结果")
+                st.subheader("📈 简单线性回归结果")
                 st.write(f"回归方程：{y_col} = {model.params[0]:.2f} + {coef:.4f}×{x_col}")
-                st.write(f"R²：{r_squared:.4f}，p值：{p_value:.4f}")
+                st.write(f"决定系数R²：{r_squared:.4f}，p值：{p_value:.4f}")
                 
                 fig = px.scatter(
-                    df_reg, x=x_col, y=y_col, trendline="ols", title=f"{x_col}对{y_col}的影响",
+                    df_reg, x=x_col, y=y_col, trendline="ols", title=f"{x_col}对{y_col}的回归分析",
                     color_discrete_sequence=[params["chart_color"]],
                     width=params["chart_width"], height=params["chart_height"]
                 )
@@ -302,9 +286,10 @@ if st.button("🚀 开始分析"):
                 significance = "显著" if p_value < 0.05 else "不显著"
                 report = f"""
                 ### 📝 分析报告
-                1. {x_col}对{y_col}的影响{significance}（p={p_value:.4f}）；
-                2. 回归系数{coef:.4f}，说明{x_col}每增加1，{y_col} {'增加' if coef>0 else '减少'} {abs(coef):.4f}；
-                3. R²={r_squared:.4f}，说明{x_col}能解释{y_col} {r_squared*100:.1f}%的变化。
+                1. 变量关系：{x_col}对{y_col}的影响{significant}（p={p_value:.4f}）；
+                2. 回归系数：{coef:.4f}，说明{x_col}每增加1，{y_col} {'增加' if coef>0 else '减少'} {abs(coef):.4f}；
+                3. 拟合程度：R²={r_squared:.4f}，说明{x_col}能解释{y_col} {r_squared*100:.1f}%的变化；
+                4. 统计依据：p<0.05代表回归系数有统计学意义，R²越接近1拟合效果越好。
                 """
 
             elif target_analysis == "logistic_reg":
@@ -317,8 +302,8 @@ if st.button("🚀 开始分析"):
                 accuracy = model.score(df_log[feature_cols], df_log[target_col + "_encoded"])
                 coefs = dict(zip(feature_cols, model.coef_[0]))
                 
-                st.subheader("🔮 逻辑回归结果")
-                st.write(f"模型准确率：{accuracy:.4f}")
+                st.subheader("🔮 逻辑回归（分类预测）结果")
+                st.write(f"模型准确率：{accuracy:.4f}（即预测正确的样本占比）")
                 st.write("各特征系数（系数越大，对预测结果影响越强）：")
                 st.dataframe(pd.DataFrame({"特征": coefs.keys(), "系数": coefs.values()}), use_container_width=True)
                 
@@ -331,9 +316,10 @@ if st.button("🚀 开始分析"):
                 
                 report = f"""
                 ### 📝 分析报告
-                1. 逻辑回归模型准确率：{accuracy:.4f}（越高说明预测效果越好）；
+                1. 模型性能：逻辑回归模型准确率{accuracy:.4f}（越高预测效果越好）；
                 2. 特征影响：{max(coefs, key=coefs.get)}对{target_col}的影响最大（系数{coefs[max(coefs, key=coefs.get)]:.4f}）；
-                3. 结论：模型可用于{target_col}的分类预测，准确率{accuracy*100:.1f}%。
+                3. 结论：模型可用于{target_col}的二分类预测，准确率{accuracy*100:.1f}%；
+                4. 系数解读：正系数代表该特征值越大，越倾向于预测为“1”类；负系数则相反。
                 """
 
             elif target_analysis == "kmeans":
@@ -346,7 +332,7 @@ if st.button("🚀 开始分析"):
                 df["聚类标签"] = df_cluster["聚类标签"].reindex(df.index)
                 
                 st.subheader("🌀 K-Means聚类结果")
-                st.write(f"聚类数量：{n_clusters}，各聚类样本数：")
+                st.write(f"聚类数量（K值）：{n_clusters}，各聚类样本数：")
                 st.dataframe(df["聚类标签"].value_counts(), use_container_width=True)
                 
                 fig = px.scatter(
@@ -363,9 +349,10 @@ if st.button("🚀 开始分析"):
                 
                 report = f"""
                 ### 📝 分析报告
-                1. 数据被分为{n_clusters}个聚类，样本数分别为：{dict(df['聚类标签'].value_counts())}；
-                2. 聚类中心反映了每类样本的核心特征，可用于样本分组、特征分析；
-                3. 建议：可根据聚类结果进一步分析不同组的差异，或调整K值优化聚类效果。
+                1. 聚类结果：数据被分为{n_clusters}个聚类，样本数分别为：{dict(df['聚类标签'].value_counts())}；
+                2. 聚类中心：每个聚类的特征均值代表该类的核心特征（如聚类0的{feature_cols[0]}均值为{centers.iloc[0][feature_cols[0]]:.2f}）；
+                3. 业务建议：可根据聚类结果对数据分组分析（如客户分群、订单分类、城市聚类）；
+                4. 调优提示：若聚类效果不佳，可调整K值或选择更多/更具代表性的数值变量。
                 """
 
             st.divider()
@@ -373,10 +360,10 @@ if st.button("🚀 开始分析"):
             st.download_button(
                 label="📥 下载分析报告（Markdown）",
                 data=report,
-                file_name=f"科研数据分析报告_{target_analysis}.md",
+                file_name=f"{file_names[selected_file_idx]}_{analysis_type}_分析报告.md",
                 mime="text/markdown"
             )
             
     except Exception as e:
         st.error(f"❌ 分析失败：{str(e)}")
-        st.info("💡 可能原因：数据缺失值过多、样本量不足、变量选择不当")
+        st.info("💡 可能原因：数据缺失值过多、变量选择不当、样本量不足（聚类需至少K个有效样本）")
