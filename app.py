@@ -18,10 +18,10 @@ st.set_page_config(
     layout="wide"
 )
 st.title("📊 科研数据分析助手-增强版")
-st.markdown("**支持单文件分析+双文件跨文件关联分析+自定义图表**")
+st.markdown("**支持单文件分析+多文件逐步关联分析+自定义图表**")
 st.divider()
 
-st.subheader("第一步：上传数据文件（可上传多个，支持跨文件关联）")
+st.subheader("第一步：上传数据文件（支持多文件逐步关联）")
 uploaded_files = st.file_uploader(
     "支持Excel(.xlsx)或CSV(.csv)文件，可上传多个", 
     type=["xlsx", "csv"],
@@ -29,7 +29,7 @@ uploaded_files = st.file_uploader(
 )
 
 if not uploaded_files:
-    st.info("💡 示例：上传客户信息、订单数据、城市对照表等，支持2个文件跨字段关联分析")
+    st.info("💡 示例：上传客户信息、订单数据、城市对照表等，支持多文件逐步关联分析")
     st.stop()
 
 df_list = []
@@ -79,8 +79,8 @@ for file in uploaded_files:
 
 st.subheader("第二步：选择分析模式")
 analysis_mode = st.radio(
-    "选择分析模式（跨文件分析仅支持2个文件关联）",
-    options=["单文件独立分析", "双文件跨文件关联分析"]
+    "选择分析模式",
+    options=["单文件独立分析", "多文件逐步关联分析"]
 )
 
 # 单文件分析逻辑
@@ -89,34 +89,52 @@ if analysis_mode == "单文件独立分析":
     df = df_list[selected_file_idx]
     st.success(f"✅ 已选择单文件：{file_names[selected_file_idx]}")
 
-# 双文件跨文件关联分析逻辑（核心）
+# 多文件逐步关联分析逻辑（核心升级）
 else:
     if len(file_names) < 2:
-        st.error("❌ 跨文件分析至少需要上传2个文件！")
+        st.error("❌ 多文件关联分析至少需要上传2个文件！")
         st.stop()
-    # 选择要关联的两个文件
-    file1_idx = st.selectbox("选择关联文件1", range(len(file_names)), format_func=lambda x: file_names[x], key="file1")
-    file2_idx = st.selectbox("选择关联文件2", [i for i in range(len(file_names)) if i != file1_idx], format_func=lambda x: file_names[x], key="file2")
-    df1, df2 = df_list[file1_idx], df_list[file2_idx]
-    file1_name, file2_name = file_names[file1_idx], file_names[file2_idx]
     
-    # 选择两个文件的关联关键字段（手动选，灵活适配）
-    st.markdown(f"### 选择{file1_name}和{file2_name}的关联关键字段")
-    col1, col2 = st.columns(2)
-    with col1:
-        key1 = st.selectbox(f"{file1_name}的关联字段", df1.columns.tolist(), key="key1")
-    with col2:
-        key2 = st.selectbox(f"{file2_name}的关联字段", df2.columns.tolist(), key="key2")
+    # 选择基础文件
+    base_file_idx = st.selectbox("选择基础文件（后续所有文件将关联到该文件）", range(len(file_names)), format_func=lambda x: file_names[x])
+    df = df_list[base_file_idx]
+    base_file_name = file_names[base_file_idx]
+    st.success(f"✅ 已选择基础文件：{base_file_name}（当前数据：{len(df)}行 × {len(df.columns)}列）")
     
-    # 选择关联方式
-    join_type = st.radio("选择关联方式", options=["左关联（保留文件1所有数据）", "内关联（仅保留两边匹配数据）"], key="join")
-    join_map = {"左关联（保留文件1所有数据）": "left", "内关联（仅保留两边匹配数据）": "inner"}
+    # 剩余可选关联文件
+    remaining_file_idxs = [i for i in range(len(file_names)) if i != base_file_idx]
+    remaining_file_names = [file_names[i] for i in remaining_file_idxs]
     
-    # 执行关联
-    df = pd.merge(df1, df2, left_on=key1, right_on=key2, how=join_map[join_type], suffixes=(f"_{file1_name.split('.')[0]}", f"_{file2_name.split('.')[0]}"))
-    st.success(f"✅ 跨文件关联完成！{file1_name}[{key1}] ↔ {file2_name}[{key2}]，关联后数据：{len(df)}行 × {len(df.columns)}列")
+    # 逐步关联每个文件
+    for i in range(len(remaining_file_idxs)):
+        st.markdown(f"### 关联第{i+1}个文件")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            file_idx = st.selectbox(f"选择要关联的文件 {i+1}", remaining_file_idxs, format_func=lambda x: file_names[x], key=f"file_{i}")
+            file_name = file_names[file_idx]
+            df_to_join = df_list[file_idx]
+        
+        with col2:
+            base_key = st.selectbox(f"基础文件[{base_file_name}]的关联字段", df.columns.tolist(), key=f"base_key_{i}")
+        
+        with col3:
+            join_key = st.selectbox(f"关联文件[{file_name}]的关联字段", df_to_join.columns.tolist(), key=f"join_key_{i}")
+        
+        # 关联方式
+        join_type = st.radio(f"选择关联方式（文件 {i+1}）", options=["左关联（保留基础文件数据）", "内关联（仅保留匹配数据）"], key=f"join_type_{i}")
+        join_map = {"左关联（保留基础文件数据）": "left", "内关联（仅保留匹配数据）": "inner"}
+        
+        # 执行关联
+        df = pd.merge(df, df_to_join, left_on=base_key, right_on=join_key, how=join_map[join_type], suffixes=(f"_{base_file_name.split('.')[0]}", f"_{file_name.split('.')[0]}"))
+        st.success(f"✅ 关联完成！{base_file_name}[{base_key}] ↔ {file_name}[{join_key}]，当前数据：{len(df)}行 × {len(df.columns)}列")
+        
+        # 移除已关联的文件，避免重复关联
+        remaining_file_idxs.remove(file_idx)
+        if not remaining_file_idxs:
+            break
 
-# 统一的数预览和变量识别（单文件/跨文件通用）
+# 统一的数据预览和变量识别
 st.subheader("数据预览（前5行）")
 st.dataframe(df.head(), use_container_width=True)
 numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
@@ -393,11 +411,11 @@ if st.button("🚀 开始分析"):
 
             st.divider()
             st.markdown(report)
-            # 报告命名适配双模式
+            # 报告命名适配多模式
             if analysis_mode == "单文件独立分析":
                 file_tag = file_names[selected_file_idx]
             else:
-                file_tag = f"{file1_name}_{file2_name}_关联"
+                file_tag = f"{base_file_name}_多文件关联"
             st.download_button(
                 label="📥 下载分析报告（Markdown）",
                 data=report,
@@ -407,4 +425,4 @@ if st.button("🚀 开始分析"):
             
     except Exception as e:
         st.error(f"❌ 分析失败：{str(e)}")
-        st.info("💡 可能原因：数据缺失值过多、变量选择不当、样本量不足（聚类需至少K个有效样本）、跨文件关联后无匹配数据")
+        st.info("💡 可能原因：数据缺失值过多、变量选择不当、样本量不足（聚类需至少K个有效样本）、关联后无匹配数据")
