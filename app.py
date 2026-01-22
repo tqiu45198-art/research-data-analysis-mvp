@@ -9,6 +9,7 @@ from sklearn.cluster import KMeans
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import LabelEncoder
 import warnings
+import io
 warnings.filterwarnings('ignore')
 
 st.set_page_config(
@@ -33,24 +34,39 @@ if not uploaded_files:
 
 df_list = []
 file_names = []
-encodings = ['utf-8', 'gbk', 'gb2312', 'latin-1']
-seps = [',', '\t', ';']
+encodings = ['utf-8-sig', 'gbk', 'gb2312', 'utf-8', 'big5', 'utf-16', 'gb18030']
+seps = [',', '\t', ';', '|', ' ', '=', ':', '\s+']
 
 for file in uploaded_files:
     try:
+        file_content = file.read()
+        if len(file_content) == 0:
+            raise ValueError("文件为空，无法读取")
+        file.seek(0)
+        
         if file.name.endswith(".csv"):
             df = None
             for encoding in encodings:
                 for sep in seps:
                     try:
-                        df = pd.read_csv(file, encoding=encoding, sep=sep)
+                        if encoding == 'utf-16':
+                            df = pd.read_csv(io.StringIO(file_content.decode(encoding, errors='ignore')), sep=sep)
+                        else:
+                            df = pd.read_csv(file, encoding=encoding, sep=sep, on_bad_lines='skip')
                         break
-                    except (UnicodeDecodeError, pd.errors.EmptyDataError, pd.errors.ParserError):
+                    except (UnicodeDecodeError, pd.errors.EmptyDataError, pd.errors.ParserError, ValueError):
                         continue
                 if df is not None:
                     break
             if df is None:
-                raise ValueError("所有编码/分隔符尝试均失败，无法读取该CSV文件")
+                try:
+                    from csv import Sniffer
+                    sniffer = Sniffer()
+                    sample = file_content[:1024].decode('utf-8-sig', errors='ignore')
+                    delimiter = sniffer.sniff(sample).delimiter
+                    df = pd.read_csv(file, encoding='utf-8-sig', sep=delimiter)
+                except:
+                    raise ValueError("所有编码/分隔符尝试均失败，无法读取该CSV文件")
         else:
             df = pd.read_excel(file)
         
@@ -77,7 +93,7 @@ elif merge_type == "纵向合并（追加数据）":
     df = pd.concat(df_list, ignore_index=True)
     st.success(f"✅ 纵向合并完成，合并后数据总行数：{len(df)}")
 else:
-    key_col = st.text_input("输入关联关键字段（所有文件需包含该字段，如「学号」「样本ID」）", placeholder="如：样本ID")
+    key_col = st.text_input("输入关联关键字段（所有文件需包含该字段，如「Location」「菏泽」「样本ID」）", placeholder="如：Location")
     if not key_col:
         st.stop()
     df = df_list[0]
@@ -139,7 +155,7 @@ elif target_analysis == "t_test":
     if not categorical_cols:
         st.error("❌ 未识别到分类变量！无法进行t检验")
         st.stop()
-    params["group_col"] = st.selectbox("选择分组变量（如性别、组别）", categorical_cols)
+    params["group_col"] = st.selectbox("选择分组变量（如Location、菏泽、性别）", categorical_cols)
     params["result_col"] = st.selectbox("选择要比较的数值变量", numeric_cols)
     group_counts = df[params["group_col"]].nunique()
     if group_counts != 2:
@@ -151,7 +167,7 @@ elif target_analysis == "anova":
     if len(categorical_cols) < 1:
         st.error("❌ 至少需要1个分类变量（因素）！无法进行方差分析")
         st.stop()
-    params["factor_cols"] = st.multiselect("选择因素变量（分类变量，可多选）", categorical_cols, default=categorical_cols[0])
+    params["factor_cols"] = st.multiselect("选择因素变量（分类变量，可多选，如Location、菏泽）", categorical_cols, default=categorical_cols[0])
     params["result_col"] = st.selectbox("选择因变量（数值变量）", numeric_cols)
     params["formula"] = f"{params['result_col']} ~ {' + '.join(params['factor_cols'])}"
 
