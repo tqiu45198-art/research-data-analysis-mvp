@@ -493,43 +493,54 @@ if df is not None and var_types is not None:
                         else:
                             ttest_text += "无符合条件的二分类变量，未执行均值检验"
 
-                        # 2. 生成真实可视化图表（自动选关键变量）
+                        # 2. 生成真实可视化图表（带异常捕获，失败则跳过）
                         st.markdown("### 真实可视化图表")
                         chart_desc = []
                         
-                        # 图1：相关热力图
-                        if len(var_types['numeric'])>=2:
-                            st.subheader("图1：数值变量相关热力图")
-                            fig_corr, ax_corr = plt.subplots(figsize=(10, 8))
-                            im_corr = ax_corr.imshow(corr_res['相关矩阵'], cmap='RdBu_r', vmin=-1, vmax=1)
-                            ax_corr.set_xticks(np.arange(len(var_types['numeric'])))
-                            ax_corr.set_yticks(np.arange(len(var_types['numeric'])))
-                            ax_corr.set_xticklabels(var_types['numeric'], rotation=45, ha='right')
-                            ax_corr.set_yticklabels(var_types['numeric'])
-                            for i in range(len(var_types['numeric'])):
-                                for j in range(len(var_types['numeric'])):
-                                    text = ax_corr.text(j, i, corr_res['相关矩阵'].iloc[i, j], ha="center", va="center", color="black")
-                            cbar_corr = ax_corr.figure.colorbar(im_corr, ax=ax_corr)
-                            plt.tight_layout()
-                            st.pyplot(fig_corr)
-                            chart_desc.append("图1：数值变量相关热力图，展示了各变量间的皮尔逊相关系数强弱及方向")
-                        
-                        # 图2：主要变量折线图（比如generation_mw和demand_mw）
-                        if 'generation_mw' in var_types['numeric'] and 'demand_mw' in var_types['numeric']:
-                            st.subheader("图2：generation_mw与demand_mw趋势折线图")
-                            fig_line = px.line(df.head(1000), x=df.head(1000).index, y=['generation_mw', 'demand_mw'], title="发电量与需求量趋势对比")
-                            fig_line.update_layout(width=800, height=400)
-                            st.plotly_chart(fig_line, use_container_width=True)
-                            chart_desc.append("图2：generation_mw与demand_mw的趋势折线图，展示了两者的时间序列变化关系")
-                        
-                        # 图3：分类型变量频数图（若有）
-                        if var_types['categorical']:
-                            cat_col = var_types['categorical'][0]
-                            st.subheader(f"图3：{cat_col}频数分布条形图")
-                            fig_bar = px.bar(freq_res[cat_col].reset_index(), x='index', y='频数', title=f"{cat_col}频数分布")
-                            fig_bar.update_layout(width=800, height=400)
-                            st.plotly_chart(fig_bar, use_container_width=True)
-                            chart_desc.append(f"图3：{cat_col}的频数分布条形图，展示了该分类变量的各类别占比")
+                        # 图1：相关热力图（异常捕获）
+                        try:
+                            if len(var_types['numeric'])>=2:
+                                st.subheader("图1：数值变量相关热力图")
+                                fig_corr, ax_corr = plt.subplots(figsize=(10, 8))
+                                im_corr = ax_corr.imshow(corr_res['相关矩阵'], cmap='RdBu_r', vmin=-1, vmax=1)
+                                ax_corr.set_xticks(np.arange(len(var_types['numeric'])))
+                                ax_corr.set_yticks(np.arange(len(var_types['numeric'])))
+                                ax_corr.set_xticklabels(var_types['numeric'], rotation=45, ha='right')
+                                ax_corr.set_yticklabels(var_types['numeric'])
+                                for i in range(len(var_types['numeric'])):
+                                    for j in range(len(var_types['numeric'])):
+                                        text = ax_corr.text(j, i, corr_res['相关矩阵'].iloc[i, j], ha="center", va="center", color="black")
+                                cbar_corr = ax_corr.figure.colorbar(im_corr, ax=ax_corr)
+                                plt.tight_layout()
+                                st.pyplot(fig_corr)
+                                chart_desc.append("图1：数值变量相关热力图，展示了各变量间的皮尔逊相关系数强弱及方向")
+                        except Exception as e:
+                            st.warning("图1（相关热力图）生成失败，已跳过")
+
+                        # 图2：主要变量折线图（异常捕获）
+                        try:
+                            if 'generation_mw' in var_types['numeric'] and 'demand_mw' in var_types['numeric']:
+                                st.subheader("图2：generation_mw与demand_mw趋势折线图")
+                                fig_line = px.line(df.head(1000), x=df.head(1000).index, y=['generation_mw', 'demand_mw'], title="发电量与需求量趋势对比")
+                                fig_line.update_layout(width=800, height=400)
+                                st.plotly_chart(fig_line, use_container_width=True)
+                                chart_desc.append("图2：generation_mw与demand_mw的趋势折线图，展示了两者的时间序列变化关系")
+                        except Exception as e:
+                            st.warning("图2（趋势折线图）生成失败，已跳过")
+
+                        # 图3：分类型变量频数图（异常捕获）
+                        try:
+                            if var_types['categorical']:
+                                cat_col = var_types['categorical'][0]
+                                st.subheader(f"图3：{cat_col}频数分布条形图")
+                                # 修复：确保freq_res[cat_col]的列名正确
+                                freq_df = freq_res[cat_col].reset_index().rename(columns={'index': cat_col})
+                                fig_bar = px.bar(freq_df, x=cat_col, y='频数', title=f"{cat_col}频数分布")
+                                fig_bar.update_layout(width=800, height=400)
+                                st.plotly_chart(fig_bar, use_container_width=True)
+                                chart_desc.append(f"图3：{cat_col}的频数分布条形图，展示了该分类变量的各类别占比")
+                        except Exception as e:
+                            st.warning("图3（频数条形图）生成失败，已跳过")
 
                         # 3. 整合统计+图表信息
                         real_info = f"""以下是该数据的真实统计结果：
@@ -541,14 +552,14 @@ if df is not None and var_types is not None:
 
 {ttest_text}
 
-以下是该数据的真实可视化图表信息：
-{"；".join(chart_desc)}
+以下是成功生成的真实可视化图表信息：
+{"；".join(chart_desc) if chart_desc else "无可用图表"}
 """
 
                         # 4. 调用AI（结合真实统计+图表）
                         st.markdown("### AI分析结论（结合真实统计+图表）")
                         prompt = f"""你是资深科研统计分析师，需基于以下真实统计结果和可视化图表，生成分析报告，要求：
-1. 分析中必须结合提供的图表（比如“从图1可以看出...”“图2显示...”）；
+1. 分析中结合提供的图表（若有），比如“从图1可以看出...”；
 2. 先总结数据基本特征，再分析变量关系，最后给出结论和建议；
 3. 语言专业、逻辑清晰，适配科研场景，不编造任何内容。
 
