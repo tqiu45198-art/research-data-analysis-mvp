@@ -18,11 +18,10 @@ import os
 from datetime import datetime
 from dotenv import load_dotenv
 
-# ---------------------- LangChain 正确导入（核心修正）----------------------
 from langchain_deepseek.chat_models import ChatDeepSeek
 from langchain_experimental.tools import PythonAstREPLTool
-# 必须从 langchain.agents 单独导入，且确保 langchain-community 已安装
-from langchain.agents import AgentExecutor
+from langchain_community.agents import AgentExecutor
+from langchain_community.agents import create_tool_calling_agent
 from langchain.agents import create_tool_calling_agent
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import SystemMessage
@@ -114,7 +113,6 @@ def identify_variable_types(df):
         'datetime': datetime_cols
     }
 
-# ---------------------- LangChain AI 初始化（确保无报错）----------------------
 @st.cache_resource(show_spinner="初始化AI引擎...")
 def init_ai_agent(df):
     api_key = os.getenv("DEEPSEEK_API_KEY")
@@ -277,3 +275,4 @@ if df is not None:
         )
 else:
     st.info("💡 请在侧边栏上传数据文件（支持任意CSV/Excel）")
+
