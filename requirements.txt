@@ -12,10 +12,10 @@ scipy>=1.11.0
 statsmodels>=0.14.0
 scikit-learn>=1.3.0
 
-# LangChain 完整依赖（解决 AgentExecutor 导入问题）
-langchain>=0.2.0
-langchain-core>=0.2.0  # 核心依赖，必须安装
-langchain-community>=0.2.0  # 社区组件，包含部分工具
+# LangChain 0.2+ 完整依赖（缺一不可）
+langchain-core>=0.2.10  # 核心底层依赖，AgentExecutor 依赖此包
+langchain-community>=0.2.9  # 社区组件，包含 agents 模块
+langchain>=0.2.9  # 主包，需与子包版本匹配
 langchain-deepseek>=0.1.0  # DeepSeek 大模型适配
-langchain-experimental>=0.0.63  # 实验性工具（如 PythonAstREPLTool）
+langchain-experimental>=0.0.63  # PythonAstREPLTool 所在包
 python-dotenv>=1.0.0
