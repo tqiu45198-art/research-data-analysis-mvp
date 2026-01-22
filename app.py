@@ -1,4 +1,3 @@
-# 科研数据分析平台 完整无注释代码（Streamlit Cloud部署+AI真实统计结果）
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -459,15 +458,16 @@ if df is not None and var_types is not None:
             st.plotly_chart(fig, use_container_width=True)
 
     with tab8:
-        st.subheader("🤖 AI 智能分析（基于真实统计结果）")
+        st.subheader("🤖 AI 智能分析（基于真实统计+可视化）")
         if "DEEPSEEK_API_KEY" not in st.secrets:
             st.warning("⚠️ 请先在【Streamlit Cloud → Settings → Secrets】中配置：DEEPSEEK_API_KEY = '你的sk-开头密钥'")
         else:
-            st.success("✅ API密钥已配置，AI基于真实统计结果生成结论")
+            st.success("✅ API密钥已配置，AI基于真实统计+图表生成结论")
             st.markdown("---")
-            with st.expander("📑 AI自动数据分析（真实统计结果）", expanded=True):
-                if st.button("🚀 开始AI自动分析（真实数据）"):
-                    with st.spinner("正在执行真实统计分析，请稍候..."):
+            with st.expander("📑 AI自动数据分析（真实统计+图表）", expanded=True):
+                if st.button("🚀 开始AI自动分析"):
+                    with st.spinner("正在生成真实统计+图表，请稍候..."):
+                        # 1. 生成真实统计结果
                         desc_res = descriptive_analysis(df, var_types['numeric']) if var_types['numeric'] else "无数值型变量"
                         desc_text = "### 描述统计结果\n" + desc_res.to_string() if var_types['numeric'] else "无数值型变量"
                         
@@ -493,7 +493,46 @@ if df is not None and var_types is not None:
                         else:
                             ttest_text += "无符合条件的二分类变量，未执行均值检验"
 
-                        real_stats_text = f"""以下是该数据的真实统计分析结果，你只能基于这些结果生成分析报告，禁止编造任何数值：
+                        # 2. 生成真实可视化图表（自动选关键变量）
+                        st.markdown("### 真实可视化图表")
+                        chart_desc = []
+                        
+                        # 图1：相关热力图
+                        if len(var_types['numeric'])>=2:
+                            st.subheader("图1：数值变量相关热力图")
+                            fig_corr, ax_corr = plt.subplots(figsize=(10, 8))
+                            im_corr = ax_corr.imshow(corr_res['相关矩阵'], cmap='RdBu_r', vmin=-1, vmax=1)
+                            ax_corr.set_xticks(np.arange(len(var_types['numeric'])))
+                            ax_corr.set_yticks(np.arange(len(var_types['numeric'])))
+                            ax_corr.set_xticklabels(var_types['numeric'], rotation=45, ha='right')
+                            ax_corr.set_yticklabels(var_types['numeric'])
+                            for i in range(len(var_types['numeric'])):
+                                for j in range(len(var_types['numeric'])):
+                                    text = ax_corr.text(j, i, corr_res['相关矩阵'].iloc[i, j], ha="center", va="center", color="black")
+                            cbar_corr = ax_corr.figure.colorbar(im_corr, ax=ax_corr)
+                            plt.tight_layout()
+                            st.pyplot(fig_corr)
+                            chart_desc.append("图1：数值变量相关热力图，展示了各变量间的皮尔逊相关系数强弱及方向")
+                        
+                        # 图2：主要变量折线图（比如generation_mw和demand_mw）
+                        if 'generation_mw' in var_types['numeric'] and 'demand_mw' in var_types['numeric']:
+                            st.subheader("图2：generation_mw与demand_mw趋势折线图")
+                            fig_line = px.line(df.head(1000), x=df.head(1000).index, y=['generation_mw', 'demand_mw'], title="发电量与需求量趋势对比")
+                            fig_line.update_layout(width=800, height=400)
+                            st.plotly_chart(fig_line, use_container_width=True)
+                            chart_desc.append("图2：generation_mw与demand_mw的趋势折线图，展示了两者的时间序列变化关系")
+                        
+                        # 图3：分类型变量频数图（若有）
+                        if var_types['categorical']:
+                            cat_col = var_types['categorical'][0]
+                            st.subheader(f"图3：{cat_col}频数分布条形图")
+                            fig_bar = px.bar(freq_res[cat_col].reset_index(), x='index', y='频数', title=f"{cat_col}频数分布")
+                            fig_bar.update_layout(width=800, height=400)
+                            st.plotly_chart(fig_bar, use_container_width=True)
+                            chart_desc.append(f"图3：{cat_col}的频数分布条形图，展示了该分类变量的各类别占比")
+
+                        # 3. 整合统计+图表信息
+                        real_info = f"""以下是该数据的真实统计结果：
 {desc_text}
 
 {corr_text}
@@ -501,37 +540,35 @@ if df is not None and var_types is not None:
 {freq_text}
 
 {ttest_text}
-"""
-                        st.markdown("### 真实统计分析结果")
-                        st.text(real_stats_text)
-                        st.markdown("### AI分析结论（基于真实数据）")
-                        
-                        prompt = f"""你是资深科研统计分析师，需基于以下真实的统计结果生成分析报告，要求：
-1. 只能使用提供的真实统计结果，绝对不能编造任何数值、统计量、p值；
-2. 先总结数据的基本特征，基于描述统计、频数结果分析数据分布特点；
-3. 分析变量间的关系，基于相关矩阵解读数值变量的相关性强弱和显著性；
-4. 若有均值检验结果，详细解读统计意义和实际研究意义；
-5. 最后给出客观、专业的分析结论和针对性的研究建议；
-6. 格式清晰，分点排版，语言专业且通俗易懂，适配科研论文使用。
 
-真实统计结果：
-{real_stats_text}
+以下是该数据的真实可视化图表信息：
+{"；".join(chart_desc)}
+"""
+
+                        # 4. 调用AI（结合真实统计+图表）
+                        st.markdown("### AI分析结论（结合真实统计+图表）")
+                        prompt = f"""你是资深科研统计分析师，需基于以下真实统计结果和可视化图表，生成分析报告，要求：
+1. 分析中必须结合提供的图表（比如“从图1可以看出...”“图2显示...”）；
+2. 先总结数据基本特征，再分析变量关系，最后给出结论和建议；
+3. 语言专业、逻辑清晰，适配科研场景，不编造任何内容。
+
+真实信息：
+{real_info}
 """
                         stream = call_deepseek_api(prompt)
                         st.write_stream(stream)
             
-            with st.expander("❓ AI统计问答（个性化问题）", expanded=False):
+            with st.expander("❓ AI统计问答", expanded=False):
                 user_question = st.text_area(
-                    "输入你的问题（结合当前数据）",
-                    placeholder="示例：分析A和B的相关性并解读；用t检验比较两组均值差异；构建回归模型预测C",
+                    "输入你的问题",
+                    placeholder="示例：分析generation_mw和demand_mw的相关性；用t检验比较两组数据",
                     height=100
                 )
                 if st.button("💬 发送问题") and user_question:
-                    st.markdown("### AI解答结果（流式生成）")
-                    prompt = f"""你是统计分析师，基于以下数据概况解答我的问题，要求：
-1. 给出具体统计方法和操作步骤；
-2. 解读结果的判断标准（如p<0.05为显著）；
-3. 回答简洁，贴合科研数据分析，不编造任何数据。
+                    st.markdown("### AI解答结果")
+                    prompt = f"""你是统计分析师，基于以下数据概况解答问题，要求：
+1. 回答简洁专业，贴合科研分析；
+2. 不编造任何数据。
 
 数据概况：{data_overview}
 我的问题：{user_question}
@@ -539,18 +576,17 @@ if df is not None and var_types is not None:
                     stream = call_deepseek_api(prompt)
                     st.write_stream(stream)
             
-            with st.expander("📈 AI结果解读（解读已有统计结果）", expanded=False):
+            with st.expander("📈 AI结果解读", expanded=False):
                 user_result = st.text_area(
                     "粘贴你的统计结果",
-                    placeholder="示例：皮尔逊相关系数0.78，p=0.001；线性回归R²=0.82，p<0.001；t检验t=2.35，p=0.02",
+                    placeholder="示例：相关系数0.78，p=0.001；R²=0.82",
                     height=100
                 )
                 if st.button("🔍 解读结果") and user_result:
-                    st.markdown("### AI解读结果（流式生成）")
+                    st.markdown("### AI解读结果")
                     prompt = f"""你是统计分析师，解读以下统计结果，要求：
-1. 逐一解读每个结果的统计意义和实际研究意义；
-2. 说明统计判断标准（如p<0.05为差异显著）；
-3. 分点对应输入内容，清晰易懂，不编造任何补充数据。
+1. 说明统计意义和研究意义；
+2. 分点对应输入内容。
 
 数据概况：{data_overview}
 我的统计结果：{user_result}
@@ -561,5 +597,5 @@ else:
     st.info("💡 请在【左侧边栏】上传CSV/Excel数据文件，即可开始分析")
     st.markdown("#### 📌 功能说明")
     st.markdown("- 包含SPSS核心统计分析功能，操作更简易")
-    st.markdown("- AI基于真实统计结果生成结论，无虚假数值")
-    st.markdown("- 支持自动分析、统计问答、结果解读，所有分析结果可直接复制")
+    st.markdown("- AI基于真实统计+图表生成结论，无虚假内容")
+    st.markdown("- 支持自动分析、统计问答、结果解读，所有结果可直接复制")
