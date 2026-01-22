@@ -18,10 +18,10 @@ st.set_page_config(
     layout="wide"
 )
 st.title("📊 科研数据分析助手-增强版")
-st.markdown("**支持多文件上传+单文件独立分析+自定义图表**")
+st.markdown("**支持单文件分析+双文件跨文件关联分析+自定义图表**")
 st.divider()
 
-st.subheader("第一步：上传数据文件（可上传多个，选择一个分析）")
+st.subheader("第一步：上传数据文件（可上传多个，支持跨文件关联）")
 uploaded_files = st.file_uploader(
     "支持Excel(.xlsx)或CSV(.csv)文件，可上传多个", 
     type=["xlsx", "csv"],
@@ -29,7 +29,7 @@ uploaded_files = st.file_uploader(
 )
 
 if not uploaded_files:
-    st.info("💡 示例：上传包含「数值变量/分类变量」的表格（如客户信息、订单数据、城市对照表）")
+    st.info("💡 示例：上传客户信息、订单数据、城市对照表等，支持2个文件跨字段关联分析")
     st.stop()
 
 df_list = []
@@ -77,10 +77,46 @@ for file in uploaded_files:
         st.error(f"❌ 读取文件{file.name}失败：{str(e)}")
         st.stop()
 
-st.subheader("第二步：选择要分析的文件")
-selected_file_idx = st.selectbox("从上传的文件中选择一个进行分析", range(len(file_names)), format_func=lambda x: file_names[x])
-df = df_list[selected_file_idx]
+st.subheader("第二步：选择分析模式")
+analysis_mode = st.radio(
+    "选择分析模式（跨文件分析仅支持2个文件关联）",
+    options=["单文件独立分析", "双文件跨文件关联分析"]
+)
 
+# 单文件分析逻辑
+if analysis_mode == "单文件独立分析":
+    selected_file_idx = st.selectbox("选择要分析的文件", range(len(file_names)), format_func=lambda x: file_names[x])
+    df = df_list[selected_file_idx]
+    st.success(f"✅ 已选择单文件：{file_names[selected_file_idx]}")
+
+# 双文件跨文件关联分析逻辑（核心）
+else:
+    if len(file_names) < 2:
+        st.error("❌ 跨文件分析至少需要上传2个文件！")
+        st.stop()
+    # 选择要关联的两个文件
+    file1_idx = st.selectbox("选择关联文件1", range(len(file_names)), format_func=lambda x: file_names[x], key="file1")
+    file2_idx = st.selectbox("选择关联文件2", [i for i in range(len(file_names)) if i != file1_idx], format_func=lambda x: file_names[x], key="file2")
+    df1, df2 = df_list[file1_idx], df_list[file2_idx]
+    file1_name, file2_name = file_names[file1_idx], file_names[file2_idx]
+    
+    # 选择两个文件的关联关键字段（手动选，灵活适配）
+    st.markdown(f"### 选择{file1_name}和{file2_name}的关联关键字段")
+    col1, col2 = st.columns(2)
+    with col1:
+        key1 = st.selectbox(f"{file1_name}的关联字段", df1.columns.tolist(), key="key1")
+    with col2:
+        key2 = st.selectbox(f"{file2_name}的关联字段", df2.columns.tolist(), key="key2")
+    
+    # 选择关联方式
+    join_type = st.radio("选择关联方式", options=["左关联（保留文件1所有数据）", "内关联（仅保留两边匹配数据）"], key="join")
+    join_map = {"左关联（保留文件1所有数据）": "left", "内关联（仅保留两边匹配数据）": "inner"}
+    
+    # 执行关联
+    df = pd.merge(df1, df2, left_on=key1, right_on=key2, how=join_map[join_type], suffixes=(f"_{file1_name.split('.')[0]}", f"_{file2_name.split('.')[0]}"))
+    st.success(f"✅ 跨文件关联完成！{file1_name}[{key1}] ↔ {file2_name}[{key2}]，关联后数据：{len(df)}行 × {len(df.columns)}列")
+
+# 统一的数预览和变量识别（单文件/跨文件通用）
 st.subheader("数据预览（前5行）")
 st.dataframe(df.head(), use_container_width=True)
 numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
@@ -286,7 +322,7 @@ if st.button("🚀 开始分析"):
                 significance = "显著" if p_value < 0.05 else "不显著"
                 report = f"""
                 ### 📝 分析报告
-                1. 变量关系：{x_col}对{y_col}的影响{significant}（p={p_value:.4f}）；
+                1. 变量关系：{x_col}对{y_col}的影响{significance}（p={p_value:.4f}）；
                 2. 回归系数：{coef:.4f}，说明{x_col}每增加1，{y_col} {'增加' if coef>0 else '减少'} {abs(coef):.4f}；
                 3. 拟合程度：R²={r_squared:.4f}，说明{x_col}能解释{y_col} {r_squared*100:.1f}%的变化；
                 4. 统计依据：p<0.05代表回归系数有统计学意义，R²越接近1拟合效果越好。
@@ -357,13 +393,18 @@ if st.button("🚀 开始分析"):
 
             st.divider()
             st.markdown(report)
+            # 报告命名适配双模式
+            if analysis_mode == "单文件独立分析":
+                file_tag = file_names[selected_file_idx]
+            else:
+                file_tag = f"{file1_name}_{file2_name}_关联"
             st.download_button(
                 label="📥 下载分析报告（Markdown）",
                 data=report,
-                file_name=f"{file_names[selected_file_idx]}_{analysis_type}_分析报告.md",
+                file_name=f"{file_tag}_{analysis_type}_分析报告.md",
                 mime="text/markdown"
             )
             
     except Exception as e:
         st.error(f"❌ 分析失败：{str(e)}")
-        st.info("💡 可能原因：数据缺失值过多、变量选择不当、样本量不足（聚类需至少K个有效样本）")
+        st.info("💡 可能原因：数据缺失值过多、变量选择不当、样本量不足（聚类需至少K个有效样本）、跨文件关联后无匹配数据")
