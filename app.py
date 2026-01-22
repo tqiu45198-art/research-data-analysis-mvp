@@ -11,6 +11,7 @@ from sklearn.preprocessing import LabelEncoder
 import warnings
 import io
 import re
+from csv import Sniffer
 warnings.filterwarnings('ignore')
 
 st.set_page_config(
@@ -35,8 +36,10 @@ if not uploaded_files:
 
 df_list = []
 file_names = []
-encodings = ['utf-8-sig', 'gbk', 'gb2312', 'utf-8', 'big5', 'utf-16', 'gb18030']
-seps = [',', '\t', ';', '|', ' ', '=', ':', '\s+']
+# 超全编码列表，覆盖所有可能
+encodings = ['utf-8-sig', 'gbk', 'gb2312', 'utf-8', 'big5', 'utf-16', 'gb18030', 'cp1252', 'latin-1', 'utf-16le', 'utf-16be']
+# 超全分隔符列表，覆盖所有可能
+seps = [',', '\t', ';', '|', ' ', '=', ':', '\s+', '\t+', ';+', '|+', ',\s*', '\t\s*', ';\s*', '\|\s*']
 
 def clean_column_names(df):
     df.columns = [re.sub(r'[^\w\s\u4e00-\u9fa5]', '', str(col)).strip() for col in df.columns]
@@ -54,58 +57,79 @@ for file in uploaded_files:
         if len(file_content) == 0:
             raise ValueError("文件为空，无法读取")
         file.seek(0)
+        df = None
+        file_name = file.name
         
-        if file.name.endswith(".csv"):
-            df = None
-            if file.name == "df_list.csv":
-                for encoding in ['utf-8-sig', 'gbk']:
-                    for sep in [',', '\t']:
-                        try:
+        if file_name == "df_list.csv":
+            st.info(f"🔍 正在尝试读取 {file_name}，启用超全编码/分隔符扫描...")
+            # 1. 超全编码+分隔符暴力尝试
+            for encoding in encodings:
+                for sep in seps:
+                    try:
+                        if encoding in ['utf-16', 'utf-16le', 'utf-16be']:
+                            content = file_content.decode(encoding, errors='replace')
+                            df = pd.read_csv(io.StringIO(content), sep=sep, on_bad_lines='skip')
+                        else:
                             df = pd.read_csv(file, encoding=encoding, sep=sep, on_bad_lines='skip')
-                            df = fix_df_list_columns(df)
-                            break
-                        except:
-                            continue
-                    if df is not None:
+                        df = fix_df_list_columns(df)
                         break
-            else:
-                for encoding in encodings:
-                    for sep in seps:
-                        try:
-                            if encoding == 'utf-16':
-                                content = file_content.decode(encoding, errors='replace')
-                                df = pd.read_csv(io.StringIO(content), sep=sep)
-                            else:
-                                df = pd.read_csv(file, encoding=encoding, sep=sep, on_bad_lines='skip')
-                            df = clean_column_names(df)
-                            break
-                        except:
-                            continue
-                    if df is not None:
-                        break
+                    except Exception as e:
+                        continue
+                if df is not None:
+                    break
+            # 2. 自动检测分隔符兜底
             if df is None:
                 try:
-                    from csv import Sniffer
-                    sniffer = Sniffer()
-                    sample = file_content[:1024].decode('utf-8-sig', errors='replace')
-                    delimiter = sniffer.sniff(sample).delimiter
+                    sample = file_content[:4096].decode('utf-8-sig', errors='replace')
+                    delimiter = Sniffer().sniff(sample).delimiter
                     df = pd.read_csv(file, encoding='utf-8-sig', sep=delimiter, on_bad_lines='skip')
-                    if file.name == "df_list.csv":
-                        df = fix_df_list_columns(df)
-                    else:
+                    df = fix_df_list_columns(df)
+                except:
+                    pass
+            # 3. 手动兜底：如果还是失败，让用户直接粘贴内容
+            if df is None:
+                st.warning(f"⚠️ {file_name} 自动读取失败，请手动粘贴文件内容：")
+                user_content = st.text_area(f"粘贴 {file_name} 的内容（每行用逗号/制表符分隔）", key=f"manual_{file_name}")
+                if user_content:
+                    df = pd.read_csv(io.StringIO(user_content), sep=',', on_bad_lines='skip')
+                    df = fix_df_list_columns(df)
+        else:
+            # 其他文件的超全尝试
+            for encoding in encodings:
+                for sep in seps:
+                    try:
+                        if encoding in ['utf-16', 'utf-16le', 'utf-16be']:
+                            content = file_content.decode(encoding, errors='replace')
+                            df = pd.read_csv(io.StringIO(content), sep=sep, on_bad_lines='skip')
+                        else:
+                            df = pd.read_csv(file, encoding=encoding, sep=sep, on_bad_lines='skip')
                         df = clean_column_names(df)
+                        break
+                    except:
+                        continue
+                if df is not None:
+                    break
+            if df is None:
+                try:
+                    sample = file_content[:4096].decode('utf-8-sig', errors='replace')
+                    delimiter = Sniffer().sniff(sample).delimiter
+                    df = pd.read_csv(file, encoding='utf-8-sig', sep=delimiter, on_bad_lines='skip')
+                    df = clean_column_names(df)
                 except:
                     raise ValueError("所有编码/分隔符尝试均失败，无法读取该CSV文件")
-        else:
-            df = pd.read_excel(file, engine='openpyxl')
-            df = clean_column_names(df)
         
-        df_list.append(df)
-        file_names.append(file.name)
-        st.success(f"✅ 成功读取文件：{file.name}（行数：{len(df)}，列数：{len(df.columns)}）")
+        if df is not None:
+            df_list.append(df)
+            file_names.append(file_name)
+            st.success(f"✅ 成功读取文件：{file_name}（行数：{len(df)}，列数：{len(df.columns)}）")
+        else:
+            st.error(f"❌ 读取文件{file_name}失败：所有自动尝试均失败，请手动粘贴内容")
     except Exception as e:
         st.error(f"❌ 读取文件{file.name}失败：{str(e)}")
-        st.stop()
+
+if not df_list:
+    st.error("❌ 没有成功读取任何文件，请检查文件格式或手动粘贴内容")
+    st.stop()
 
 st.subheader("第二步：选择分析模式")
 analysis_mode = st.radio(
