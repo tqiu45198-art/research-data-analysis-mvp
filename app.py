@@ -20,9 +20,7 @@ from dotenv import load_dotenv
 
 from langchain_deepseek.chat_models import ChatDeepSeek
 from langchain_experimental.tools import PythonAstREPLTool
-from langchain_community.agents import AgentExecutor
-from langchain_community.agents import create_tool_calling_agent
-from langchain.agents import create_tool_calling_agent
+from langchain.agents import AgentExecutor, create_tool_calling_agent
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import SystemMessage
 
@@ -119,18 +117,15 @@ def init_ai_agent(df):
     if not api_key:
         st.error("❌ 未配置API密钥，请检查.env文件或部署环境变量")
         return None
-    # 初始化 DeepSeek 大模型
     llm = ChatDeepSeek(
         model="deepseek-chat",
         api_key=api_key,
         temperature=0.3
     )
-    # 初始化代码执行工具
     tool = PythonAstREPLTool(
         locals={"df": df, "pd": pd, "np": np, "plt": plt, "px": px, "alt": alt, "stats": stats},
         description="执行Python数据分析代码，可访问df数据集"
     )
-    # AI 提示词
     system_prompt = """
     你是科研数据分析专家，基于df数据集完成专业分析：
     1. 先输出数据概况（规模、变量类型、缺失值）；
@@ -139,14 +134,12 @@ def init_ai_agent(df):
     4. 结合本科生科研场景解读结果，避免纯技术术语；
     5. 生成结构化结论，含统计学依据（如p值、R²）。
     """
-    # 构建 Prompt
     prompt = ChatPromptTemplate.from_messages([
         SystemMessage(content=system_prompt),
         ("placeholder", "{chat_history}"),
         ("human", "{input}"),
         ("placeholder", "{agent_scratchpad}")
     ])
-    # 创建 Agent 并返回 Executor
     agent = create_tool_calling_agent(llm, [tool], prompt)
     return AgentExecutor(agent=agent, tools=[tool], verbose=False, handle_parsing_errors="请生成正确Python代码")
 
@@ -159,7 +152,6 @@ def auto_ai_analysis(df):
         response = agent_executor.invoke({"input": auto_query, "chat_history": []})
     return response["output"]
 
-# ---------------------- 页面核心逻辑（不变）----------------------
 st.title("🤖 AI驱动科研数据分析平台")
 st.markdown("**低代码操作 · 自然语言交互 · 专业报告生成**")
 st.divider()
@@ -275,4 +267,3 @@ if df is not None:
         )
 else:
     st.info("💡 请在侧边栏上传数据文件（支持任意CSV/Excel）")
-
