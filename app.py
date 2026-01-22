@@ -10,6 +10,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import LabelEncoder
 import warnings
 import io
+import re
 warnings.filterwarnings('ignore')
 
 st.set_page_config(
@@ -37,6 +38,11 @@ file_names = []
 encodings = ['utf-8-sig', 'gbk', 'gb2312', 'utf-8', 'big5', 'utf-16', 'gb18030']
 seps = [',', '\t', ';', '|', ' ', '=', ':', '\s+']
 
+def clean_column_names(df):
+    df.columns = [re.sub(r'[^\w\s\u4e00-\u9fa5]', '', str(col)).strip() for col in df.columns]
+    df.columns = [col if col else f"col_{i}" for i, col in enumerate(df.columns)]
+    return df
+
 for file in uploaded_files:
     try:
         file_content = file.read()
@@ -50,9 +56,10 @@ for file in uploaded_files:
                 for sep in seps:
                     try:
                         if encoding == 'utf-16':
-                            df = pd.read_csv(io.StringIO(file_content.decode(encoding, errors='ignore')), sep=sep)
+                            df = pd.read_csv(io.StringIO(file_content.decode(encoding, errors='replace')), sep=sep)
                         else:
-                            df = pd.read_csv(file, encoding=encoding, sep=sep, on_bad_lines='skip')
+                            df = pd.read_csv(file, encoding=encoding, sep=sep, on_bad_lines='skip', errors='replace')
+                        df = clean_column_names(df)
                         break
                     except (UnicodeDecodeError, pd.errors.EmptyDataError, pd.errors.ParserError, ValueError):
                         continue
@@ -62,13 +69,15 @@ for file in uploaded_files:
                 try:
                     from csv import Sniffer
                     sniffer = Sniffer()
-                    sample = file_content[:1024].decode('utf-8-sig', errors='ignore')
+                    sample = file_content[:1024].decode('utf-8-sig', errors='replace')
                     delimiter = sniffer.sniff(sample).delimiter
-                    df = pd.read_csv(file, encoding='utf-8-sig', sep=delimiter)
+                    df = pd.read_csv(file, encoding='utf-8-sig', sep=delimiter, on_bad_lines='skip', errors='replace')
+                    df = clean_column_names(df)
                 except:
                     raise ValueError("所有编码/分隔符尝试均失败，无法读取该CSV文件")
         else:
-            df = pd.read_excel(file)
+            df = pd.read_excel(file, engine='openpyxl')
+            df = clean_column_names(df)
         
         df_list.append(df)
         file_names.append(file.name)
@@ -83,29 +92,24 @@ analysis_mode = st.radio(
     options=["单文件独立分析", "多文件逐步关联分析"]
 )
 
-# 单文件分析逻辑
 if analysis_mode == "单文件独立分析":
     selected_file_idx = st.selectbox("选择要分析的文件", range(len(file_names)), format_func=lambda x: file_names[x])
     df = df_list[selected_file_idx]
     st.success(f"✅ 已选择单文件：{file_names[selected_file_idx]}")
 
-# 多文件逐步关联分析逻辑（核心升级）
 else:
     if len(file_names) < 2:
         st.error("❌ 多文件关联分析至少需要上传2个文件！")
         st.stop()
     
-    # 选择基础文件
     base_file_idx = st.selectbox("选择基础文件（后续所有文件将关联到该文件）", range(len(file_names)), format_func=lambda x: file_names[x])
     df = df_list[base_file_idx]
     base_file_name = file_names[base_file_idx]
     st.success(f"✅ 已选择基础文件：{base_file_name}（当前数据：{len(df)}行 × {len(df.columns)}列）")
     
-    # 剩余可选关联文件
     remaining_file_idxs = [i for i in range(len(file_names)) if i != base_file_idx]
     remaining_file_names = [file_names[i] for i in remaining_file_idxs]
     
-    # 逐步关联每个文件
     for i in range(len(remaining_file_idxs)):
         st.markdown(f"### 关联第{i+1}个文件")
         col1, col2, col3 = st.columns(3)
@@ -121,20 +125,17 @@ else:
         with col3:
             join_key = st.selectbox(f"关联文件[{file_name}]的关联字段", df_to_join.columns.tolist(), key=f"join_key_{i}")
         
-        # 关联方式
         join_type = st.radio(f"选择关联方式（文件 {i+1}）", options=["左关联（保留基础文件数据）", "内关联（仅保留匹配数据）"], key=f"join_type_{i}")
         join_map = {"左关联（保留基础文件数据）": "left", "内关联（仅保留匹配数据）": "inner"}
         
-        # 执行关联
         df = pd.merge(df, df_to_join, left_on=base_key, right_on=join_key, how=join_map[join_type], suffixes=(f"_{base_file_name.split('.')[0]}", f"_{file_name.split('.')[0]}"))
+        df = clean_column_names(df)
         st.success(f"✅ 关联完成！{base_file_name}[{base_key}] ↔ {file_name}[{join_key}]，当前数据：{len(df)}行 × {len(df.columns)}列")
         
-        # 移除已关联的文件，避免重复关联
         remaining_file_idxs.remove(file_idx)
         if not remaining_file_idxs:
             break
 
-# 统一的数据预览和变量识别
 st.subheader("数据预览（前5行）")
 st.dataframe(df.head(), use_container_width=True)
 numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
@@ -199,9 +200,9 @@ elif target_analysis == "t_test":
 
 elif target_analysis == "anova":
     if len(categorical_cols) < 1:
-        st.error("❌ 未识别到分类变量！无法进行方差分析（需有因素列如Location、客户类型等）")
+        st.error("❌ 未识别到分类变量！无法进行方差分析（需有因素列如Location、中文名称）")
         st.stop()
-    params["factor_cols"] = st.multiselect("选择因素变量（分类变量，可多选，如Location、中文名称）", categorical_cols, default=categorical_cols[0])
+    params["factor_cols"] = st.multiselect("选择因素变量（分类变量，可多选）", categorical_cols, default=categorical_cols[0])
     params["result_col"] = st.selectbox("选择因变量（数值变量）", numeric_cols)
     params["formula"] = f"{params['result_col']} ~ {' + '.join(params['factor_cols'])}"
 
@@ -215,7 +216,7 @@ elif target_analysis == "regression":
 elif target_analysis == "logistic_reg":
     binary_cats = [col for col in categorical_cols if df[col].nunique() == 2]
     if not binary_cats:
-        st.error("❌ 未识别到二分类变量！逻辑回归需因变量为二分类（如：是/否、达标/未达标）")
+        st.error("❌ 未识别到二分类变量！逻辑回归需因变量为二分类（如：是/否）")
         st.stop()
     params["target_col"] = st.selectbox("选择预测目标（二分类变量）", binary_cats)
     params["feature_cols"] = st.multiselect("选择特征变量（数值型）", numeric_cols, default=numeric_cols[:2])
@@ -411,7 +412,6 @@ if st.button("🚀 开始分析"):
 
             st.divider()
             st.markdown(report)
-            # 报告命名适配多模式
             if analysis_mode == "单文件独立分析":
                 file_tag = file_names[selected_file_idx]
             else:
