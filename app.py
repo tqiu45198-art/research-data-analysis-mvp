@@ -34,7 +34,7 @@ if not uploaded_files:
     st.info("💡 示例：上传客户信息、订单数据、统计报表等，支持后续筛选部分文件分析")
     st.stop()
 
-# 读取所有上传文件（通用适配，解决乱码）
+# 读取所有上传文件（通用适配，解决乱码+空文件问题）
 df_list = []
 file_names = []
 encodings = ['utf-8-sig', 'gbk', 'utf-8', 'gb2312', 'big5', 'utf-16', 'gb18030', 'latin-1']
@@ -52,8 +52,10 @@ def clean_column_names(df):
 for file in uploaded_files:
     try:
         file_content = file.read()
+        # 预处理：空文件直接提示
         if len(file_content) == 0:
-            raise ValueError("文件为空")
+            st.warning(f"⚠️ {file.name} 是0B空文件，无法读取")
+            continue
         file.seek(0)
         df = None
         file_name = file.name
@@ -82,8 +84,8 @@ for file in uploaded_files:
                     delimiter = Sniffer().sniff(sample).delimiter
                     df = pd.read_csv(file, encoding='utf-8-sig', sep=delimiter, on_bad_lines='skip')
                     df = clean_column_names(df)
-                except:
-                    raise ValueError("编码/分隔符匹配失败")
+                except Exception as e:
+                    raise ValueError(f"编码/分隔符匹配失败：{str(e)}")
         
         # Excel文件
         else:
@@ -97,10 +99,11 @@ for file in uploaded_files:
         else:
             st.warning(f"⚠️ {file_name} 无有效数据，已跳过")
     except Exception as e:
-        st.error(f"❌ 读取{file_name}失败：{str(e)}")
+        # 修复：用普通文字替代特殊符号，避免NameError
+        st.error(f"读取{file_name}失败：{str(e)}")
 
 if not df_list:
-    st.error("❌ 无有效文件可分析，请检查文件格式")
+    st.error("❌ 无有效文件可分析，请检查文件格式和内容")
     st.stop()
 
 # ---------------------- 第二步：智能文件筛选（选择本次参与分析的文件）----------------------
@@ -210,7 +213,7 @@ else:
                 df = pd.merge(df, join_df_renamed, left_on=base_key, right_on=join_key, how=join_map[join_type])
                 st.success(f"✅ 关联完成：{base_name} ↔ {join_name}（当前：{len(df)}行 × {len(df.columns)}列）")
             except Exception as e:
-                st.error(f"❌ 关联失败：{str(e)}")
+                st.error(f"关联失败：{str(e)}")
                 st.stop()
 
             # 移除已关联的文件（同步索引）
@@ -535,5 +538,5 @@ if st.button("🚀 开始分析"):
             )
             
     except Exception as e:
-        st.error(f"❌ 分析失败：{str(e)}")
+        st.error(f"分析失败：{str(e)}")
         st.info("💡 可能原因：数据缺失过多、变量选择不当、样本量不足")
