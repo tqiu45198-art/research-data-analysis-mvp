@@ -8,10 +8,9 @@ from scipy import stats
 import warnings
 import io
 import re
-import os
 from datetime import datetime
-import requests  # 新增：调用DeepSeek API需要的网络请求库
-import json      # 新增：处理API返回的JSON数据
+# 核心修改：用OpenAI兼容客户端调用DeepSeek（2026官方推荐）
+from openai import OpenAI
 
 # 基础配置
 warnings.filterwarnings('ignore')
@@ -19,7 +18,7 @@ plt.rcParams['font.sans-serif'] = ['SimHei']
 plt.rcParams['axes.unicode_minus'] = False
 st.set_page_config(page_title="科研数据分析平台", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
 
-# 核心依赖导入
+# 核心依赖导入（保留原有分析库）
 try:
     from scipy.stats import chi2_contingency, ttest_1samp, ttest_ind, ttest_rel, ks_2samp, mannwhitneyu, kruskal, friedmanchisquare, wilcoxon
     from statsmodels.stats.proportion import binom_test as sm_binom_test
@@ -31,47 +30,59 @@ try:
     from sklearn.linear_model import LinearRegression, LogisticRegression
     from sklearn.metrics import r2_score, classification_report
 except ImportError as e:
-    st.error(f"部分分析库导入失败：{e}，请检查requirements.txt")
+    st.error(f"分析库导入失败：{e}，请检查requirements.txt")
 
-# ---------------------- 新增：DeepSeek API调用核心函数 ----------------------
-def call_deepseek_api(api_key, prompt, model="deepseek-chat", temperature=0.7):
+# ---------------------- 核心修改：2026版DeepSeek API调用函数（适配Streamlit Cloud） ----------------------
+def call_deepseek_api(prompt, model="deepseek-chat", temperature=0.7):
     """
-    调用DeepSeek大模型API
-    :param api_key: 用户的DeepSeek API密钥（必填）
-    :param prompt: 发给AI的提示词
-    :param model: 调用的模型，默认deepseek-chat（通用对话）
-    :param temperature: 生成随机性，0-1，越小越严谨
-    :return: AI的回答内容/错误提示
+    2026年DeepSeek API调用规范（OpenAI兼容客户端+流式输出+云端密钥）
+    :param prompt: 提示词
+    :param model: 2026主流模型 deepseek-chat/deepseek-reasoner
+    :param temperature: 生成随机性0-1
+    :return: 流式生成器/错误提示
     """
-    # DeepSeek API官方接口地址（无需修改）
-    API_URL = "https://api.deepseek.com/v1/chat/completions"
-    # 请求头（固定格式，仅需传入api_key）
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {api_key}"  # Bearer后加空格，固定格式
-    }
-    # 请求体（按DeepSeek API文档要求构造）
-    payload = {
-        "model": model,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": temperature,
-        "max_tokens": 2048  # 最大生成字符数，可根据需要调整
-    }
+    # 1. 读取Streamlit Cloud Secrets中的API密钥（核心适配）
+    if "DEEPSEEK_API_KEY" not in st.secrets:
+        return iter(["❌ 未配置API密钥：请在Streamlit Cloud → Settings → Secrets中添加 DEEPSEEK_API_KEY = '你的密钥'"])
+    
+    api_key = st.secrets["DEEPSEEK_API_KEY"]
+    # 2. 初始化OpenAI兼容客户端，配置2026官方Base URL（核心适配）
     try:
-        # 发送POST请求调用API
-        response = requests.post(API_URL, headers=headers, json=payload, timeout=30)
-        response.raise_for_status()  # 捕获HTTP请求错误
-        result = response.json()
-        # 提取AI的回答内容
-        return result["choices"][0]["message"]["content"]
-    except requests.exceptions.Timeout:
-        return "❌ API调用超时：请检查网络或稍后重试"
-    except requests.exceptions.ConnectionError:
-        return "❌ 网络连接失败：请检查本地网络"
-    except KeyError:
-        return f"❌ API返回数据异常：{result.get('error', '未知错误')}"
+        client = OpenAI(
+            api_key=api_key,
+            base_url="https://api.deepseek.com/v1"  # 2026年DeepSeek官方OpenAI兼容地址
+        )
     except Exception as e:
-        return f"❌ API调用失败：{str(e)}"
+        return iter([f"❌ 客户端初始化失败：{str(e)}"])
+    
+    # 3. 构造请求体，按2026规范配置
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=temperature,
+            max_tokens=2048,
+            stream=True  # 开启流式输出，解决海外网络超时（核心适配）
+        )
+        # 流式生成结果，适配Streamlit输出
+        def stream_generator():
+            for chunk in response:
+                if chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+        return stream_generator()
+    # 4. 捕获2026年常见错误（模型不存在/密钥无效/服务器繁忙）
+    except client.BadRequestError as e:
+        if "model_not_found" in str(e):
+            return iter(["❌ 模型不存在：2026年主流模型为 deepseek-chat / deepseek-reasoner"])
+        return iter([f"❌ 请求参数错误：{str(e)}"])
+    except client.UnauthorizedError:
+        return iter(["❌ API密钥无效：请检查密钥是否正确/未过期（2026年密钥格式为sk-开头）"])
+    except client.ServiceUnavailableError:
+        return iter(["❌ DeepSeek服务器繁忙：2026年用户量激增，建议稍后重试（可关注DeepSeek官网状态）"])
+    except TimeoutError:
+        return iter(["❌ 网络超时：Streamlit Cloud海外服务器访问延迟，流式输出已优化，仍超时请稍后试"])
+    except Exception as e:
+        return iter([f"❌ API调用失败：{str(e)}"])
 
 # ---------------------- 原有核心分析函数（完全保留，无修改） ----------------------
 def load_and_clean_data(file):
@@ -255,26 +266,12 @@ def plot_chart(df, plot_type, x_col, y_col=None, group_col=None):
     fig.update_layout(width=800, height=500)
     return fig
 
-# ---------------------- 页面主体（侧边栏+主内容区，新增API输入和AI标签页） ----------------------
+# ---------------------- 页面主体（删除侧边栏API输入框，适配云端Secrets） ----------------------
 st.title("科研数据分析平台")
 st.divider()
 
-# ---------------------- 侧边栏（新增【DeepSeek API配置区】，标注清晰） ----------------------
+# 侧边栏（仅保留数据上传/合并，删除原API输入框）
 with st.sidebar:
-    # ========== 【### 此处为用户操作区1：DeepSeek API密钥输入 ###】 ==========
-    st.markdown("## 🤖 DeepSeek AI配置")
-    st.markdown("### 请输入你的DeepSeek API密钥（密码类型，不会泄露）")
-    st.markdown("#### 获取地址：[DeepSeek开放平台](https://platform.deepseek.com/) → 控制台 → API密钥管理")
-    DEEPSEEK_API_KEY = st.text_input(
-        label="DeepSeek API Key",
-        type="password",  # 密码类型，输入内容隐藏
-        placeholder="sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",  # API格式示例
-        key="deepseek_api_key"
-    )
-    st.markdown("---")  # 分隔线，区分API配置和数据上传
-    # ======================================================================
-
-    # 原有数据上传功能（完全保留）
     st.markdown("## 📥 数据上传")
     uploaded_files = st.file_uploader("上传文件（CSV/Excel，支持多文件）", type=["xlsx", "csv"], accept_multiple_files=True)
     df = None
@@ -315,9 +312,9 @@ with st.sidebar:
             st.write(f"数值型变量：{len(var_types['numeric'])}个")
             st.write(f"分类型变量：{len(var_types['categorical'])}个")
 
-# ---------------------- 主内容区（新增第8个【AI分析】标签页，其余保留） ----------------------
+# 主内容区（保留原有7个分析标签页+AI分析标签页，流式输出AI结果）
 if df is not None and var_types is not None:
-    # 提取数据概况（传给AI，不传递原始数据，保护隐私+节省token）
+    # 提取数据概况（传给AI，保护隐私）
     data_overview = f"""
     本次分析数据概况：
     1. 数据规模：{len(df)}行 × {len(df.columns)}列
@@ -326,12 +323,12 @@ if df is not None and var_types is not None:
     4. 二分类变量：{', '.join(var_types['binary_categorical']) if var_types['binary_categorical'] else '无'}
     5. 缺失值总数：{df.isnull().sum().sum()}个，整体缺失率：{(df.isnull().sum().sum()/(df.shape[0]*df.shape[1]))*100:.2f}%
     """
-    # 原有7个标签页 + 新增【AI分析】标签页
+    # 分析标签页（原有7个+AI分析）
     tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
         "数据处理", "基本统计", "均值检验", "方差分析", "相关分析", "回归分析", "可视化", "AI分析"
     ])
 
-    # 标签页1-7：原有功能（完全保留，仅修复了相关分析的变量校验）
+    # 标签页1-7：原有分析功能（完全保留，已做参数校验）
     with tab1:
         st.subheader("数据处理")
         sort_col = st.selectbox("排序字段", df.columns, key='sort')
@@ -433,7 +430,7 @@ if df is not None and var_types is not None:
         corr_cols = st.multiselect("选择数值型变量（至少2个）", var_types['numeric'], key='corr_cols')
         if len(corr_cols) < 2:
             st.warning("⚠️ 请选择至少2个数值型变量")
-            st.button("执行相关分析", disabled=True)
+            st.button("执行相关分析（含热力图）", disabled=True)
         else:
             if st.button("执行相关分析（含热力图）"):
                 corr_res = correlation_analysis(df, corr_cols, corr_type_map[corr_type])
@@ -487,85 +484,80 @@ if df is not None and var_types is not None:
             fig = plot_chart(df, plot_type, x_col, y_col, group_col)
             st.plotly_chart(fig, use_container_width=True)
 
-    # ---------------------- 新增：标签页8 - AI分析（核心功能） ----------------------
+    # AI分析标签页（核心修改：流式输出AI结果，适配2026版API）
     with tab8:
-        st.subheader("🤖 DeepSeek AI 智能分析")
-        # 先校验API密钥
-        if not DEEPSEEK_API_KEY or not DEEPSEEK_API_KEY.startswith("sk-"):
-            st.warning("⚠️ 请先在【左侧边栏】输入**有效的DeepSeek API密钥**（以sk-开头），再使用AI功能")
+        st.subheader("🤖 AI 智能分析（2026 DeepSeek官方版）")
+        # 密钥配置提示
+        if "DEEPSEEK_API_KEY" not in st.secrets:
+            st.warning("⚠️ 请先在【Streamlit Cloud → Settings → Secrets】中配置：DEEPSEEK_API_KEY = '你的sk-开头密钥'")
         else:
-            st.success("✅ API密钥已配置，可使用所有AI分析功能")
+            st.success("✅ API密钥已配置，支持流式输出（解决海外网络超时）")
             st.markdown("---")
-            # AI功能1：自动数据分析（基于上传的数据，生成完整分析报告）
-            with st.expander("📑 AI自动数据分析（生成完整分析报告）", expanded=True):
-                st.markdown("基于你的数据，AI自动选择合适的统计方法，生成**可直接用于论文/报告**的分析结果")
+            # AI功能1：自动数据分析（流式输出）
+            with st.expander("📑 AI自动数据分析（生成完整报告）", expanded=True):
+                st.markdown("基于数据自动选择统计方法，生成论文级分析结果+结论建议")
                 if st.button("🚀 开始AI自动分析"):
-                    with st.spinner("AI正在分析数据，请稍候..."):
-                        # 构造AI提示词（结合数据概况+分析要求）
-                        prompt = f"""
-                        你是一名资深统计分析师，擅长科研数据分析，现在需要对以下数据进行**全面的统计分析**，要求如下：
-                        1. 先总结数据概况，指出数据特点、缺失值情况；
-                        2. 选择合适的统计方法（如描述统计、相关分析、t检验/方差分析、回归分析等）进行分析，需结合数据类型选择；
-                        3. 分析结果要包含**统计量、p值、专业解读**，避免过于专业的术语，尽量通俗；
-                        4. 最后生成**分析结论和研究建议**，适用于科研论文；
-                        5. 输出格式清晰，用标题、分点排版，不要冗余内容。
+                    st.markdown("### AI分析结果（流式生成）")
+                    prompt = f"""
+                    你是资深科研统计分析师，需对以下数据做全面统计分析，要求：
+                    1. 先总结数据概况，指出缺失值、变量类型特点；
+                    2. 选择适配的统计方法（描述统计/相关/检验/回归）分析，含统计量、p值；
+                    3. 通俗解读结果，区分统计意义和实际研究意义；
+                    4. 最后给出分析结论和研究建议，适配科研论文；
+                    5. 格式清晰，分点排版，无冗余内容。
 
-                        数据概况：
-                        {data_overview}
-                        """
-                        # 调用DeepSeek API
-                        ai_result = call_deepseek_api(DEEPSEEK_API_KEY, prompt)
-                        st.markdown("### AI自动分析结果")
-                        st.markdown(ai_result)
+                    数据概况：{data_overview}
+                    """
+                    # 调用API并流式输出
+                    stream = call_deepseek_api(prompt)
+                    st.write_stream(stream)
             
-            # AI功能2：统计问题问答（针对数据，解答个性化统计问题）
-            with st.expander("❓ AI统计问答（解答你的个性化问题）", expanded=False):
+            # AI功能2：统计问题问答（流式输出）
+            with st.expander("❓ AI统计问答（个性化问题）", expanded=False):
                 user_question = st.text_area(
-                    "请输入你的问题（结合当前数据）",
-                    placeholder="示例：1. 分析demand_mw和price的相关性并解读；2. 用t检验比较两组数据的均值差异；3. 如何构建线性回归模型预测demand_mw？",
+                    "输入你的问题（结合当前数据）",
+                    placeholder="示例：分析A和B的相关性并解读；用t检验比较两组均值差异；构建回归模型预测C",
                     height=100
                 )
                 if st.button("💬 发送问题") and user_question:
-                    with st.spinner("AI正在解答，请稍候..."):
-                        prompt = f"""
-                        你是资深统计分析师，基于以下数据概况，解答我的问题，要求：
-                        1. 结合数据类型给出**具体的统计方法和操作步骤**；
-                        2. 给出**结果解读的思路**，如果涉及统计量需说明判断标准（如p<0.05为显著）；
-                        3. 回答简洁明了，贴合科研数据分析场景。
+                    st.markdown("### AI解答结果（流式生成）")
+                    prompt = f"""
+                    你是统计分析师，基于以下数据概况解答我的问题，要求：
+                    1. 给出具体统计方法和操作步骤；
+                    2. 解读结果的判断标准（如p<0.05为显著）；
+                    3. 回答简洁，贴合科研数据分析。
 
-                        数据概况：{data_overview}
-                        我的问题：{user_question}
-                        """
-                        ai_answer = call_deepseek_api(DEEPSEEK_API_KEY, prompt)
-                        st.markdown("### AI解答结果")
-                        st.markdown(ai_answer)
+                    数据概况：{data_overview}
+                    我的问题：{user_question}
+                    """
+                    stream = call_deepseek_api(prompt)
+                    st.write_stream(stream)
             
-            # AI功能3：分析结果解读（粘贴其他分析结果，让AI解读）
+            # AI功能3：分析结果解读（流式输出）
             with st.expander("📈 AI结果解读（解读已有统计结果）", expanded=False):
                 user_result = st.text_area(
-                    "粘贴你的统计分析结果（如卡方检验p=0.02，R²=0.85等）",
-                    placeholder="示例：1. 相关分析：demand_mw和price的皮尔逊相关系数为0.78，p=0.001；2. 线性回归R²=0.82，p<0.001；3. 两独立样本t检验t=2.35，p=0.02",
+                    "粘贴你的统计结果",
+                    placeholder="示例：皮尔逊相关系数0.78，p=0.001；线性回归R²=0.82，p<0.001；t检验t=2.35，p=0.02",
                     height=100
                 )
                 if st.button("🔍 解读结果") and user_result:
-                    with st.spinner("AI正在解读，请稍候..."):
-                        prompt = f"""
-                        你是资深统计分析师，负责解读科研数据分析结果，要求：
-                        1. 对每个统计结果进行**专业解读**，说明统计意义（如p<0.05代表什么）；
-                        2. 结合数据分析**实际研究意义**，避免纯理论解读；
-                        3. 输出格式清晰，分点对应我的输入内容。
+                    st.markdown("### AI解读结果（流式生成）")
+                    prompt = f"""
+                    你是统计分析师，解读以下统计结果，要求：
+                    1. 逐一解读每个结果的统计意义（如p<0.05代表什么）；
+                    2. 结合数据概况分析实际研究意义；
+                    3. 分点对应输入内容，清晰易懂。
 
-                        我的统计结果：{user_result}
-                        数据概况：{data_overview}
-                        """
-                        ai_interpret = call_deepseek_api(DEEPSEEK_API_KEY, prompt)
-                        st.markdown("### AI结果解读")
-                        st.markdown(ai_interpret)
+                    数据概况：{data_overview}
+                    我的统计结果：{user_result}
+                    """
+                    stream = call_deepseek_api(prompt)
+                    st.write_stream(stream)
 
 # 无数据时的提示
 else:
     st.info("💡 请在【左侧边栏】上传CSV/Excel数据文件，即可开始分析")
     st.markdown("#### 📌 功能说明")
-    st.markdown("- 包含SPSS核心统计分析功能，操作比SPSS更简易")
-    st.markdown("- 接入DeepSeek AI，支持**自动分析、统计问答、结果解读**")
-    st.markdown("- 所有分析结果可直接复制，支持生成可视化图表")
+    st.markdown("- 包含SPSS核心统计分析功能，操作更简易")
+    st.markdown("- 接入2026版DeepSeek AI，支持**自动分析、统计问答、结果解读**（流式输出防超时）")
+    st.markdown("- 所有分析结果可直接复制，支持可视化图表生成")
