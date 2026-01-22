@@ -1,3 +1,4 @@
+# 科研数据分析平台 完整无注释代码（Streamlit Cloud部署+AI真实统计结果）
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -9,16 +10,13 @@ import warnings
 import io
 import re
 from datetime import datetime
-# 核心修改：用OpenAI兼容客户端调用DeepSeek（2026官方推荐）
 from openai import OpenAI
 
-# 基础配置
 warnings.filterwarnings('ignore')
 plt.rcParams['font.sans-serif'] = ['SimHei']
 plt.rcParams['axes.unicode_minus'] = False
 st.set_page_config(page_title="科研数据分析平台", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
 
-# 核心依赖导入（保留原有分析库）
 try:
     from scipy.stats import chi2_contingency, ttest_1samp, ttest_ind, ttest_rel, ks_2samp, mannwhitneyu, kruskal, friedmanchisquare, wilcoxon
     from statsmodels.stats.proportion import binom_test as sm_binom_test
@@ -30,61 +28,45 @@ try:
     from sklearn.linear_model import LinearRegression, LogisticRegression
     from sklearn.metrics import r2_score, classification_report
 except ImportError as e:
-    st.error(f"分析库导入失败：{e}，请检查requirements.txt")
+    st.error(f"分析库导入失败：{e}")
 
-# ---------------------- 核心修改：2026版DeepSeek API调用函数（适配Streamlit Cloud） ----------------------
 def call_deepseek_api(prompt, model="deepseek-chat", temperature=0.7):
-    """
-    2026年DeepSeek API调用规范（OpenAI兼容客户端+流式输出+云端密钥）
-    :param prompt: 提示词
-    :param model: 2026主流模型 deepseek-chat/deepseek-reasoner
-    :param temperature: 生成随机性0-1
-    :return: 流式生成器/错误提示
-    """
-    # 1. 读取Streamlit Cloud Secrets中的API密钥（核心适配）
     if "DEEPSEEK_API_KEY" not in st.secrets:
         return iter(["❌ 未配置API密钥：请在Streamlit Cloud → Settings → Secrets中添加 DEEPSEEK_API_KEY = '你的密钥'"])
-    
     api_key = st.secrets["DEEPSEEK_API_KEY"]
-    # 2. 初始化OpenAI兼容客户端，配置2026官方Base URL（核心适配）
     try:
         client = OpenAI(
             api_key=api_key,
-            base_url="https://api.deepseek.com/v1"  # 2026年DeepSeek官方OpenAI兼容地址
+            base_url="https://api.deepseek.com/v1"
         )
     except Exception as e:
         return iter([f"❌ 客户端初始化失败：{str(e)}"])
-    
-    # 3. 构造请求体，按2026规范配置
     try:
         response = client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": prompt}],
             temperature=temperature,
             max_tokens=2048,
-            stream=True  # 开启流式输出，解决海外网络超时（核心适配）
+            stream=True
         )
-        # 流式生成结果，适配Streamlit输出
         def stream_generator():
             for chunk in response:
                 if chunk.choices[0].delta.content:
                     yield chunk.choices[0].delta.content
         return stream_generator()
-    # 4. 捕获2026年常见错误（模型不存在/密钥无效/服务器繁忙）
     except client.BadRequestError as e:
         if "model_not_found" in str(e):
-            return iter(["❌ 模型不存在：2026年主流模型为 deepseek-chat / deepseek-reasoner"])
+            return iter(["❌ 模型不存在：主流模型为 deepseek-chat / deepseek-reasoner"])
         return iter([f"❌ 请求参数错误：{str(e)}"])
     except client.UnauthorizedError:
-        return iter(["❌ API密钥无效：请检查密钥是否正确/未过期（2026年密钥格式为sk-开头）"])
+        return iter(["❌ API密钥无效：请检查密钥是否正确/未过期"])
     except client.ServiceUnavailableError:
-        return iter(["❌ DeepSeek服务器繁忙：2026年用户量激增，建议稍后重试（可关注DeepSeek官网状态）"])
+        return iter(["❌ DeepSeek服务器繁忙：建议稍后重试"])
     except TimeoutError:
-        return iter(["❌ 网络超时：Streamlit Cloud海外服务器访问延迟，流式输出已优化，仍超时请稍后试"])
+        return iter(["❌ 网络超时：建议稍后重试"])
     except Exception as e:
         return iter([f"❌ API调用失败：{str(e)}"])
 
-# ---------------------- 原有核心分析函数（完全保留，无修改） ----------------------
 def load_and_clean_data(file):
     encodings = ['utf-8-sig', 'gbk', 'utf-8', 'gb2312']
     seps = [',', '\t', ';']
@@ -266,11 +248,9 @@ def plot_chart(df, plot_type, x_col, y_col=None, group_col=None):
     fig.update_layout(width=800, height=500)
     return fig
 
-# ---------------------- 页面主体（删除侧边栏API输入框，适配云端Secrets） ----------------------
 st.title("科研数据分析平台")
 st.divider()
 
-# 侧边栏（仅保留数据上传/合并，删除原API输入框）
 with st.sidebar:
     st.markdown("## 📥 数据上传")
     uploaded_files = st.file_uploader("上传文件（CSV/Excel，支持多文件）", type=["xlsx", "csv"], accept_multiple_files=True)
@@ -287,7 +267,6 @@ with st.sidebar:
                 df_dict[file.name] = df_temp
                 st.success(f"{file.name} 上传成功 ({len(df_temp)}行×{len(df_temp.columns)}列)")
         
-        # 多文件合并
         if len(df_dict) >= 2:
             base_file = st.selectbox("基础文件", list(df_dict.keys()))
             df = df_dict[base_file]
@@ -304,7 +283,6 @@ with st.sidebar:
         else:
             df = df_dict[list(df_dict.keys())[0]] if df_dict else None
         
-        # 数据概况
         if df is not None:
             var_types = identify_variable_types(df)
             st.markdown("## 📊 数据概况")
@@ -312,9 +290,7 @@ with st.sidebar:
             st.write(f"数值型变量：{len(var_types['numeric'])}个")
             st.write(f"分类型变量：{len(var_types['categorical'])}个")
 
-# 主内容区（保留原有7个分析标签页+AI分析标签页，流式输出AI结果）
 if df is not None and var_types is not None:
-    # 提取数据概况（传给AI，保护隐私）
     data_overview = f"""
     本次分析数据概况：
     1. 数据规模：{len(df)}行 × {len(df.columns)}列
@@ -323,12 +299,10 @@ if df is not None and var_types is not None:
     4. 二分类变量：{', '.join(var_types['binary_categorical']) if var_types['binary_categorical'] else '无'}
     5. 缺失值总数：{df.isnull().sum().sum()}个，整体缺失率：{(df.isnull().sum().sum()/(df.shape[0]*df.shape[1]))*100:.2f}%
     """
-    # 分析标签页（原有7个+AI分析）
     tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
         "数据处理", "基本统计", "均值检验", "方差分析", "相关分析", "回归分析", "可视化", "AI分析"
     ])
 
-    # 标签页1-7：原有分析功能（完全保留，已做参数校验）
     with tab1:
         st.subheader("数据处理")
         sort_col = st.selectbox("排序字段", df.columns, key='sort')
@@ -484,52 +458,42 @@ if df is not None and var_types is not None:
             fig = plot_chart(df, plot_type, x_col, y_col, group_col)
             st.plotly_chart(fig, use_container_width=True)
 
-    # AI分析标签页（核心修改：流式输出AI结果，适配2026版API）
     with tab8:
-        st.subheader("🤖 AI 智能分析（2026 DeepSeek官方版）")
-        # 密钥配置提示
+        st.subheader("🤖 AI 智能分析（基于真实统计结果）")
         if "DEEPSEEK_API_KEY" not in st.secrets:
             st.warning("⚠️ 请先在【Streamlit Cloud → Settings → Secrets】中配置：DEEPSEEK_API_KEY = '你的sk-开头密钥'")
         else:
-            st.success("✅ API密钥已配置，支持流式输出（解决海外网络超时）")
+            st.success("✅ API密钥已配置，AI基于真实统计结果生成结论")
             st.markdown("---")
-            # AI功能1：自动数据分析（基于真实统计结果）
-with st.expander("📑 AI自动数据分析（基于真实计算结果）", expanded=True):
-    st.markdown("代码会先自动执行真实统计分析，AI仅基于这些真实结果生成报告（无假数值）")
-    if st.button("🚀 开始AI自动分析（真实数据）"):
-        with st.spinner("正在执行真实统计分析，请稍候..."):
-            # ---------------------- 步骤1：自动执行真实统计分析（调用现有函数，结果100%真实） ----------------------
-            # 1. 描述统计（真实结果）
-            desc_res = descriptive_analysis(df, var_types['numeric']) if var_types['numeric'] else "无数值型变量"
-            desc_text = "### 描述统计结果\n" + desc_res.to_string() if var_types['numeric'] else "无数值型变量"
-            
-            # 2. 数值变量相关矩阵（真实结果）
-            corr_res = correlation_analysis(df, var_types['numeric'], 'pearson') if len(var_types['numeric'])>=2 else "数值型变量不足2个"
-            corr_text = "### 数值变量相关矩阵（Pearson）\n" + corr_res['相关矩阵'].to_string() if len(var_types['numeric'])>=2 else "数值型变量不足2个"
-            
-            # 3. 分类型变量频数（真实结果）
-            freq_res = frequency_analysis(df, var_types['categorical']) if var_types['categorical'] else "无分类型变量"
-            freq_text = "### 分类型变量频数结果\n"
-            if var_types['categorical']:
-                for col in var_types['categorical']:
-                    freq_text += f"\n{col}：\n" + freq_res[col].to_string()
-            else:
-                freq_text = "无分类型变量"
-            
-            # 4. 关键均值检验（若有二分类变量，自动做两独立样本t检验）
-            ttest_text = "### 均值检验结果\n"
-            if var_types['binary_categorical'] and var_types['numeric']:
-                group_col = var_types['binary_categorical'][0]  # 取第一个二分类变量
-                test_col = var_types['numeric'][0]  # 取第一个数值变量
-                ttest_res = t_test_independent(df, test_col, group_col)
-                if 'error' not in ttest_res:
-                    ttest_text += f"两独立样本t检验（{test_col}按{group_col}分组）：\n"
-                    ttest_text += f"t值={ttest_res['t值']}，p值={ttest_res['p值']}，{list(ttest_res.keys())[2]}={ttest_res[list(ttest_res.keys())[2]]}，{list(ttest_res.keys())[3]}={ttest_res[list(ttest_res.keys())[3]]}"
-            else:
-                ttest_text += "无符合条件的二分类变量，未执行均值检验"
+            with st.expander("📑 AI自动数据分析（真实统计结果）", expanded=True):
+                if st.button("🚀 开始AI自动分析（真实数据）"):
+                    with st.spinner("正在执行真实统计分析，请稍候..."):
+                        desc_res = descriptive_analysis(df, var_types['numeric']) if var_types['numeric'] else "无数值型变量"
+                        desc_text = "### 描述统计结果\n" + desc_res.to_string() if var_types['numeric'] else "无数值型变量"
+                        
+                        corr_res = correlation_analysis(df, var_types['numeric'], 'pearson') if len(var_types['numeric'])>=2 else "数值型变量不足2个"
+                        corr_text = "### 数值变量相关矩阵（Pearson）\n" + corr_res['相关矩阵'].to_string() if len(var_types['numeric'])>=2 else "数值型变量不足2个"
+                        
+                        freq_res = frequency_analysis(df, var_types['categorical']) if var_types['categorical'] else "无分类型变量"
+                        freq_text = "### 分类型变量频数结果\n"
+                        if var_types['categorical']:
+                            for col in var_types['categorical']:
+                                freq_text += f"\n{col}：\n" + freq_res[col].to_string()
+                        else:
+                            freq_text = "无分类型变量"
+                        
+                        ttest_text = "### 均值检验结果\n"
+                        if var_types['binary_categorical'] and var_types['numeric']:
+                            group_col = var_types['binary_categorical'][0]
+                            test_col = var_types['numeric'][0]
+                            ttest_res = t_test_independent(df, test_col, group_col)
+                            if 'error' not in ttest_res:
+                                ttest_text += f"两独立样本t检验（{test_col}按{group_col}分组）：\n"
+                                ttest_text += f"t值={ttest_res['t值']}，p值={ttest_res['p值']}，{list(ttest_res.keys())[2]}={ttest_res[list(ttest_res.keys())[2]]}，{list(ttest_res.keys())[3]}={ttest_res[list(ttest_res.keys())[3]]}"
+                        else:
+                            ttest_text += "无符合条件的二分类变量，未执行均值检验"
 
-            # ---------------------- 步骤2：将真实结果整理为提示词上下文 ----------------------
-            real_stats_text = f"""以下是该数据的真实统计分析结果，你只能基于这些结果生成分析报告，**禁止编造任何数值**：
+                        real_stats_text = f"""以下是该数据的真实统计分析结果，你只能基于这些结果生成分析报告，禁止编造任何数值：
 {desc_text}
 
 {corr_text}
@@ -538,31 +502,64 @@ with st.expander("📑 AI自动数据分析（基于真实计算结果）", expa
 
 {ttest_text}
 """
-
-            # ---------------------- 步骤3：调用AI，基于真实结果生成报告 ----------------------
-            st.markdown("### 真实统计分析结果（供AI参考）")
-            st.text(real_stats_text)  # 可选项：展示真实结果给用户核对
-            st.markdown("### AI分析结论（基于真实数据）")
-            
-            prompt = f"""你是资深科研统计分析师，需基于以下**真实的统计结果**生成分析报告，要求：
-1. 只能使用提供的真实统计结果，**绝对不能编造任何数值、统计量、p值**；
-2. 先总结数据的基本特征（基于描述统计、频数结果）；
-3. 分析变量间的关系（基于相关矩阵）；
-4. 解读统计检验的意义（若有均值检验结果）；
-5. 最后给出客观的分析结论和研究建议；
-6. 格式清晰，分点排版，语言专业且易懂。
+                        st.markdown("### 真实统计分析结果")
+                        st.text(real_stats_text)
+                        st.markdown("### AI分析结论（基于真实数据）")
+                        
+                        prompt = f"""你是资深科研统计分析师，需基于以下真实的统计结果生成分析报告，要求：
+1. 只能使用提供的真实统计结果，绝对不能编造任何数值、统计量、p值；
+2. 先总结数据的基本特征，基于描述统计、频数结果分析数据分布特点；
+3. 分析变量间的关系，基于相关矩阵解读数值变量的相关性强弱和显著性；
+4. 若有均值检验结果，详细解读统计意义和实际研究意义；
+5. 最后给出客观、专业的分析结论和针对性的研究建议；
+6. 格式清晰，分点排版，语言专业且通俗易懂，适配科研论文使用。
 
 真实统计结果：
 {real_stats_text}
 """
-            # 调用API并流式输出
-            stream = call_deepseek_api(prompt)
-            st.write_stream(stream)
+                        stream = call_deepseek_api(prompt)
+                        st.write_stream(stream)
+            
+            with st.expander("❓ AI统计问答（个性化问题）", expanded=False):
+                user_question = st.text_area(
+                    "输入你的问题（结合当前数据）",
+                    placeholder="示例：分析A和B的相关性并解读；用t检验比较两组均值差异；构建回归模型预测C",
+                    height=100
+                )
+                if st.button("💬 发送问题") and user_question:
+                    st.markdown("### AI解答结果（流式生成）")
+                    prompt = f"""你是统计分析师，基于以下数据概况解答我的问题，要求：
+1. 给出具体统计方法和操作步骤；
+2. 解读结果的判断标准（如p<0.05为显著）；
+3. 回答简洁，贴合科研数据分析，不编造任何数据。
 
-# 无数据时的提示
+数据概况：{data_overview}
+我的问题：{user_question}
+"""
+                    stream = call_deepseek_api(prompt)
+                    st.write_stream(stream)
+            
+            with st.expander("📈 AI结果解读（解读已有统计结果）", expanded=False):
+                user_result = st.text_area(
+                    "粘贴你的统计结果",
+                    placeholder="示例：皮尔逊相关系数0.78，p=0.001；线性回归R²=0.82，p<0.001；t检验t=2.35，p=0.02",
+                    height=100
+                )
+                if st.button("🔍 解读结果") and user_result:
+                    st.markdown("### AI解读结果（流式生成）")
+                    prompt = f"""你是统计分析师，解读以下统计结果，要求：
+1. 逐一解读每个结果的统计意义和实际研究意义；
+2. 说明统计判断标准（如p<0.05为差异显著）；
+3. 分点对应输入内容，清晰易懂，不编造任何补充数据。
+
+数据概况：{data_overview}
+我的统计结果：{user_result}
+"""
+                    stream = call_deepseek_api(prompt)
+                    st.write_stream(stream)
 else:
     st.info("💡 请在【左侧边栏】上传CSV/Excel数据文件，即可开始分析")
     st.markdown("#### 📌 功能说明")
     st.markdown("- 包含SPSS核心统计分析功能，操作更简易")
-    st.markdown("- 接入2026版DeepSeek AI，支持**自动分析、统计问答、结果解读**（流式输出防超时）")
-    st.markdown("- 所有分析结果可直接复制，支持可视化图表生成")
+    st.markdown("- AI基于真实统计结果生成结论，无虚假数值")
+    st.markdown("- 支持自动分析、统计问答、结果解读，所有分析结果可直接复制")
