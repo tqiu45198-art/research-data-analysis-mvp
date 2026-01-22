@@ -143,7 +143,7 @@ else:
         df = selected_dfs[selected_idx]
         st.success(f"✅ 已选择单文件：{selected_file_names[selected_idx]}")
     
-    # 多文件关联分析（从选中文件中选基础文件和关联文件）
+    # 多文件关联分析（修复索引越界问题）
     else:
         st.markdown("### 配置多文件关联")
         # 选择基础文件
@@ -155,35 +155,42 @@ else:
         df = selected_dfs[base_idx]
         base_name = selected_file_names[base_idx]
         remaining_idxs = [i for i in range(len(selected_file_names)) if i != base_idx]
-        remaining_dfs = [selected_dfs[i] for i in remaining_idxs]
-        remaining_names = [selected_file_names[i] for i in remaining_idxs]
+        关联计数器 = 0  # 独立计数器，避免key重复
 
-        # 逐步关联其他选中的文件
-        for i in range(len(remaining_idxs)):
-            st.markdown(f"#### 关联第{i+1}个文件")
+        # 用while循环替代for循环，动态适配文件列表变化
+        while len(remaining_idxs) > 0:
+            关联计数器 += 1
+            # 每次循环重新同步文件列表（解决索引不匹配）
+            remaining_dfs = [selected_dfs[i] for i in remaining_idxs]
+            remaining_names = [selected_file_names[i] for i in remaining_idxs]
+
+            st.markdown(f"#### 关联第{关联计数器}个文件")
             col1, col2, col3 = st.columns(3)
             
             with col1:
-                join_idx = st.selectbox(
-                    f"选择关联文件 {i+1}",
-                    remaining_idxs,
+                # 基于当前剩余文件列表选择（避免索引越界）
+                join_select_idx = st.selectbox(
+                    f"选择关联文件 {关联计数器}",
+                    range(len(remaining_idxs)),
                     format_func=lambda x: remaining_names[x],
-                    key=f"join_file_{i}"
+                    key=f"join_file_{关联计数器}"
                 )
-                join_df = remaining_dfs[remaining_idxs.index(join_idx)]
-                join_name = remaining_names[remaining_idxs.index(join_idx)]
+                # 获取选中的文件信息
+                join_idx = remaining_idxs[join_select_idx]
+                join_df = remaining_dfs[join_select_idx]
+                join_name = remaining_names[join_select_idx]
             
             with col2:
-                base_key = st.selectbox(f"基础文件关联字段", df.columns.tolist(), key=f"base_key_{i}")
+                base_key = st.selectbox(f"基础文件关联字段", df.columns.tolist(), key=f"base_key_{关联计数器}")
             
             with col3:
-                join_key = st.selectbox(f"关联文件关联字段", join_df.columns.tolist(), key=f"join_key_{i}")
+                join_key = st.selectbox(f"关联文件关联字段", join_df.columns.tolist(), key=f"join_key_{关联计数器}")
             
             # 关联方式
             join_type = st.radio(
                 f"关联方式",
                 options=["内关联（仅保留匹配数据）", "左关联（保留基础文件数据）"],
-                key=f"join_type_{i}"
+                key=f"join_type_{关联计数器}"
             )
             join_map = {"内关联（仅保留匹配数据）": "inner", "左关联（保留基础文件数据）": "left"}
 
@@ -206,10 +213,8 @@ else:
                 st.error(f"❌ 关联失败：{str(e)}")
                 st.stop()
 
-            # 移除已关联文件
-            remaining_idxs.remove(join_idx)
-            if not remaining_idxs:
-                break
+            # 移除已关联的文件（同步索引）
+            remaining_idxs.pop(join_select_idx)
 
 # ---------------------- 第四步：智能识别变量+推荐分析类型----------------------
 st.subheader("第四步：数据变量智能识别")
