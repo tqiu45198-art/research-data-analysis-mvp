@@ -1,11 +1,11 @@
-streamlit==1.53.1  # 保持最新稳定版
-pandas==2.2.2       # 修复 Python3.13 编译错误
-numpy==1.26.4        # 兼容 pandas2.2.2
+streamlit==1.53.1  # 稳定版，兼容Python3.13
+pandas==2.3.3       # 兼容Python3.13，修复编译错误
+numpy==1.26.4        # 适配pandas2.3.3
 matplotlib==3.8.4    # 修复字体和渲染问题
-plotly==5.22.0       # 稳定兼容
-scipy==1.17.0        # 修复 OpenBLAS 依赖问题
+plotly==5.22.0       # 稳定兼容，支持动态key
+scipy==1.17.0         # 解决OpenBLAS依赖问题，兼容Python3.13
 statsmodels==0.14.2
 scikit-learn==1.4.2
-openpyxl==3.1.5
-pillow==10.3.0
-openai==1.30.1
+openpyxl==3.1.5      # 读取Excel文件
+pillow==10.3.0       # 图像处理
+openai==1.30.1       # AI接口
