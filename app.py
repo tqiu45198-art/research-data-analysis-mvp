@@ -1,3 +1,4 @@
+# 完整app.py（无注释，AI分析图文嵌排+固定统一格式）
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -29,7 +30,7 @@ try:
 except ImportError as e:
     st.error(f"分析库导入失败：{e}")
 
-def call_deepseek_api(prompt, model="deepseek-chat", temperature=0.7):
+def call_deepseek_api(prompt, model="deepseek-chat", temperature=0.2):
     if "DEEPSEEK_API_KEY" not in st.secrets:
         return iter(["❌ 未配置API密钥：请在Streamlit Cloud → Settings → Secrets中添加 DEEPSEEK_API_KEY = '你的密钥'"])
     api_key = st.secrets["DEEPSEEK_API_KEY"]
@@ -45,7 +46,7 @@ def call_deepseek_api(prompt, model="deepseek-chat", temperature=0.7):
             model=model,
             messages=[{"role": "user", "content": prompt}],
             temperature=temperature,
-            max_tokens=2048,
+            max_tokens=3072,
             stream=True
         )
         def stream_generator():
@@ -290,17 +291,8 @@ with st.sidebar:
             st.write(f"分类型变量：{len(var_types['categorical'])}个")
 
 if df is not None and var_types is not None:
-    data_overview = f"""
-    本次分析数据概况：
-    1. 数据规模：{len(df)}行 × {len(df.columns)}列
-    2. 数值型变量：{', '.join(var_types['numeric']) if var_types['numeric'] else '无'}
-    3. 分类型变量：{', '.join(var_types['categorical']) if var_types['categorical'] else '无'}
-    4. 二分类变量：{', '.join(var_types['binary_categorical']) if var_types['binary_categorical'] else '无'}
-    5. 缺失值总数：{df.isnull().sum().sum()}个，整体缺失率：{(df.isnull().sum().sum()/(df.shape[0]*df.shape[1]))*100:.2f}%
-    """
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
-        "数据处理", "基本统计", "均值检验", "方差分析", "相关分析", "回归分析", "可视化", "AI分析"
-    ])
+    data_overview = f"""本次分析数据概况：1.数据规模：{len(df)}行 × {len(df.columns)}列 2.数值型变量：{', '.join(var_types['numeric']) if var_types['numeric'] else '无'} 3.分类型变量：{', '.join(var_types['categorical']) if var_types['categorical'] else '无'} 4.二分类变量：{', '.join(var_types['binary_categorical']) if var_types['binary_categorical'] else '无'} 5.缺失值总数：{df.isnull().sum().sum()}个，整体缺失率：{(df.isnull().sum().sum()/(df.shape[0]*df.shape[1]))*100:.2f}%"""
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(["数据处理", "基本统计", "均值检验", "方差分析", "相关分析", "回归分析", "可视化", "AI分析"])
 
     with tab1:
         st.subheader("数据处理")
@@ -458,49 +450,37 @@ if df is not None and var_types is not None:
             st.plotly_chart(fig, use_container_width=True)
 
     with tab8:
-        st.subheader("🤖 AI 智能分析（基于真实统计+可视化）")
+        st.subheader("🤖 AI 智能分析（图文嵌排+固定格式）")
         if "DEEPSEEK_API_KEY" not in st.secrets:
             st.warning("⚠️ 请先在【Streamlit Cloud → Settings → Secrets】中配置：DEEPSEEK_API_KEY = '你的sk-开头密钥'")
         else:
-            st.success("✅ API密钥已配置，AI基于真实统计+图表生成结论")
+            st.success("✅ API密钥已配置，AI输出图文嵌排+固定统一格式分析报告")
             st.markdown("---")
-            with st.expander("📑 AI自动数据分析（真实统计+图表）", expanded=True):
+            with st.expander("📑 AI自动数据分析（核心功能）", expanded=True):
                 if st.button("🚀 开始AI自动分析"):
-                    with st.spinner("正在生成真实统计+图表，请稍候..."):
-                        # 1. 生成真实统计结果
+                    with st.spinner("正在预处理统计结果+生成可视化图表，请稍候..."):
                         desc_res = descriptive_analysis(df, var_types['numeric']) if var_types['numeric'] else "无数值型变量"
-                        desc_text = "### 描述统计结果\n" + desc_res.to_string() if var_types['numeric'] else "无数值型变量"
-                        
+                        desc_text = desc_res.to_string() if var_types['numeric'] else "无数值型变量"
                         corr_res = correlation_analysis(df, var_types['numeric'], 'pearson') if len(var_types['numeric'])>=2 else "数值型变量不足2个"
-                        corr_text = "### 数值变量相关矩阵（Pearson）\n" + corr_res['相关矩阵'].to_string() if len(var_types['numeric'])>=2 else "数值型变量不足2个"
-                        
+                        corr_text = corr_res['相关矩阵'].to_string() if len(var_types['numeric'])>=2 else "数值型变量不足2个"
                         freq_res = frequency_analysis(df, var_types['categorical']) if var_types['categorical'] else "无分类型变量"
-                        freq_text = "### 分类型变量频数结果\n"
+                        freq_text = ""
                         if var_types['categorical']:
                             for col in var_types['categorical']:
-                                freq_text += f"\n{col}：\n" + freq_res[col].to_string()
+                                freq_text += f"{col}：{freq_res[col].to_string()}\n"
                         else:
                             freq_text = "无分类型变量"
-                        
-                        ttest_text = "### 均值检验结果\n"
+                        ttest_text = "无符合条件的二分类变量，未执行均值检验"
                         if var_types['binary_categorical'] and var_types['numeric']:
                             group_col = var_types['binary_categorical'][0]
                             test_col = var_types['numeric'][0]
                             ttest_res = t_test_independent(df, test_col, group_col)
                             if 'error' not in ttest_res:
-                                ttest_text += f"两独立样本t检验（{test_col}按{group_col}分组）：\n"
-                                ttest_text += f"t值={ttest_res['t值']}，p值={ttest_res['p值']}，{list(ttest_res.keys())[2]}={ttest_res[list(ttest_res.keys())[2]]}，{list(ttest_res.keys())[3]}={ttest_res[list(ttest_res.keys())[3]]}"
-                        else:
-                            ttest_text += "无符合条件的二分类变量，未执行均值检验"
+                                ttest_text = f"两独立样本t检验（{test_col}按{group_col}分组）：t值={ttest_res['t值']}，p值={ttest_res['p值']}，{list(ttest_res.keys())[2]}={ttest_res[list(ttest_res.keys())[2]]}，{list(ttest_res.keys())[3]}={ttest_res[list(ttest_res.keys())[3]]}"
 
-                        # 2. 生成真实可视化图表（带异常捕获，失败则跳过）
-                        st.markdown("### 真实可视化图表")
-                        chart_desc = []
-                        
-                        # 图1：相关热力图（异常捕获）
+                        chart_data = {}
                         try:
                             if len(var_types['numeric'])>=2:
-                                st.subheader("图1：数值变量相关热力图")
                                 fig_corr, ax_corr = plt.subplots(figsize=(10, 8))
                                 im_corr = ax_corr.imshow(corr_res['相关矩阵'], cmap='RdBu_r', vmin=-1, vmax=1)
                                 ax_corr.set_xticks(np.arange(len(var_types['numeric'])))
@@ -512,101 +492,138 @@ if df is not None and var_types is not None:
                                         text = ax_corr.text(j, i, corr_res['相关矩阵'].iloc[i, j], ha="center", va="center", color="black")
                                 cbar_corr = ax_corr.figure.colorbar(im_corr, ax=ax_corr)
                                 plt.tight_layout()
-                                st.pyplot(fig_corr)
-                                chart_desc.append("图1：数值变量相关热力图，展示了各变量间的皮尔逊相关系数强弱及方向")
+                                chart_data['图1'] = {'fig': fig_corr, 'name': '数值变量相关热力图', 'desc': '展示各数值型变量间皮尔逊相关系数的强弱与正负相关方向，系数越接近1/ -1表示相关性越强，0表示无线性相关'}
                         except Exception as e:
-                            st.warning("图1（相关热力图）生成失败，已跳过")
+                            pass
 
-                        # 图2：主要变量折线图（异常捕获）
                         try:
-                            if 'generation_mw' in var_types['numeric'] and 'demand_mw' in var_types['numeric']:
-                                st.subheader("图2：generation_mw与demand_mw趋势折线图")
-                                fig_line = px.line(df.head(1000), x=df.head(1000).index, y=['generation_mw', 'demand_mw'], title="发电量与需求量趋势对比")
-                                fig_line.update_layout(width=800, height=400)
-                                st.plotly_chart(fig_line, use_container_width=True)
-                                chart_desc.append("图2：generation_mw与demand_mw的趋势折线图，展示了两者的时间序列变化关系")
+                            if len(var_types['numeric'])>=2:
+                                num1, num2 = var_types['numeric'][0], var_types['numeric'][1]
+                                fig_line = px.line(df.head(1000), x=df.head(1000).index, y=[num1, num2], title=f"{num1}与{num2}趋势变化对比", width=800, height=400)
+                                chart_data['图2'] = {'fig': fig_line, 'name': f'{num1}与{num2}趋势折线图', 'desc': f'展示{num1}和{num2}前1000条数据的时间序列趋势变化，可直观对比两者的波动规律与变化一致性'}
                         except Exception as e:
-                            st.warning("图2（趋势折线图）生成失败，已跳过")
+                            pass
 
-                        # 图3：分类型变量频数图（异常捕获）
                         try:
                             if var_types['categorical']:
                                 cat_col = var_types['categorical'][0]
-                                st.subheader(f"图3：{cat_col}频数分布条形图")
-                                # 修复：确保freq_res[cat_col]的列名正确
                                 freq_df = freq_res[cat_col].reset_index().rename(columns={'index': cat_col})
-                                fig_bar = px.bar(freq_df, x=cat_col, y='频数', title=f"{cat_col}频数分布")
-                                fig_bar.update_layout(width=800, height=400)
-                                st.plotly_chart(fig_bar, use_container_width=True)
-                                chart_desc.append(f"图3：{cat_col}的频数分布条形图，展示了该分类变量的各类别占比")
+                                fig_bar = px.bar(freq_df, x=cat_col, y='频数', title=f"{cat_col}频数分布", width=800, height=400, text_auto=True)
+                                chart_data['图3'] = {'fig': fig_bar, 'name': f'{cat_col}频数分布条形图', 'desc': f'展示分类型变量{cat_col}各类型的频数与占比情况，可直观判断该变量的分布特征与主要类别构成'}
                         except Exception as e:
-                            st.warning("图3（频数条形图）生成失败，已跳过")
+                            pass
 
-                        # 3. 整合统计+图表信息
-                        real_info = f"""以下是该数据的真实统计结果：
-{desc_text}
+                        chart_names = list(chart_data.keys())
+                        chart_desc = "\n".join([f"{k}：{v['name']} - {v['desc']}" for k, v in chart_data.items()]) if chart_data else "无可用可视化图表"
+                        real_stats = f"""【描述统计结果】：{desc_text}
+【相关矩阵结果】：{corr_text}
+【分类变量频数】：{freq_text}
+【均值检验结果】：{ttest_text}
+【可用可视化图表】：{chart_desc}"""
 
-{corr_text}
+                        prompt = """你是资深科研数据分析专家，专注于基于真实统计结果和可视化图表生成标准化分析报告，严格按照以下要求输出，任何情况下不得改变格式、不得删减章节、不得编造任何数据/图表，仅基于提供的真实信息分析：
+### 固定输出格式要求（必须严格遵守，章节顺序、标题层级、标点符号完全一致）：
+# 数据统计分析报告
+## 一、数据基本特征
+1. 样本规模：明确说明数据的行数列数、整体缺失率，简要描述数据维度特征
+2. 数值变量特征：基于描述统计结果，总结数值变量的均值、标准差、极值、缺失情况，指出数据的集中趋势与离散程度
+3. 分类变量特征：基于频数分析结果，总结分类变量的主要类别、频数占比，描述分类变量的分布特征
 
-{freq_text}
+## 二、可视化图表分析
+{CHART_ANALYSIS}
+要求：1. 有多少张图就分析多少张，每张图单独成段，以【X】开头（X为图1/图2/图3）；2. 先说明图表展示的核心内容，再结合统计结果解读图表反映的规律/特征/问题；3. 语言简洁专业，图表分析与真实数据高度契合；4. 无图表则写“本次分析无可用可视化图表，跳过本章节分析”
 
-{ttest_text}
+## 三、变量关系深度分析
+1. 数值变量相关性：基于相关矩阵结果，分析变量间的线性相关程度、显著性，指出强相关/弱相关/无相关的变量组合
+2. 组间均值差异：基于均值检验结果，分析二分类分组下数值变量的均值差异是否显著（p<0.05为显著，p<0.01为极显著），无检验结果则写“无符合条件的二分类变量，未执行均值检验，跳过本项分析”
+3. 整体变量关系总结：综合上述分析，总结本次数据中变量间的核心关系规律
 
-以下是成功生成的真实可视化图表信息：
-{"；".join(chart_desc) if chart_desc else "无可用图表"}
-"""
+## 四、研究结论与建议
+### （一）研究结论
+基于本次全量统计分析与可视化结果，分3-5点客观总结数据反映的核心规律、特征、结论，每点一句话，简洁明确，仅基于真实分析结果，不做过度推断
+### （二）研究建议
+结合数据特征与变量关系，分2-4点给出针对性、可落地的研究/分析建议，建议需贴合数据实际，具有实际参考价值
 
-                        # 4. 调用AI（结合真实统计+图表）
-                        st.markdown("### AI分析结论（结合真实统计+图表）")
-                        prompt = f"""你是资深科研统计分析师，需基于以下真实统计结果和可视化图表，生成分析报告，要求：
-1. 分析中结合提供的图表（若有），比如“从图1可以看出...”；
-2. 先总结数据基本特征，再分析变量关系，最后给出结论和建议；
-3. 语言专业、逻辑清晰，适配科研场景，不编造任何内容。
+### 输出约束：
+1. 所有分析必须基于提供的真实统计结果和图表，绝对禁止编造任何数值、统计量、p值、图表信息；
+2. 格式严格遵循上述要求，标题层级（#/##/###）、编号（1./2./3.）、标点（顿号/逗号/句号）完全一致；
+3. 语言专业、简洁、客观，适配科研/数据分析场景，避免口语化；
+4. 可视化图表分析部分，必须在对应的【图X】后紧跟分析内容，图的标识与提供的图表完全一致；
+5. 温度系数已设为0.2，保证输出结果的一致性，多次分析同一数据需保持格式和核心内容高度统一。
 
-真实信息：
-{real_info}
-"""
+### 本次分析真实统计与图表信息：
+""" + real_stats + f"""
+### 数据基础概况：
+{data_overview}
+### 核心要求重申：
+1. 图表分析部分，分析到某张图时，仅需写出【图X】（无其他文字），后续由系统自动嵌入真实图表，你无需额外描述图表样式；
+2. 严格按照固定格式输出，章节完整、层级清晰，多次分析格式完全统一；
+3. 仅使用提供的真实数据，不编造任何内容。"""
+
+                        st.markdown("### 📋 AI标准化分析报告（图文嵌排）")
+                        report_placeholder = st.empty()
+                        full_report = ""
                         stream = call_deepseek_api(prompt)
-                        st.write_stream(stream)
+                        current_text = ""
+                        for chunk in stream:
+                            current_text += chunk
+                            full_report += chunk
+                            for chart in chart_names:
+                                if chart in current_text:
+                                    split_text = current_text.split(chart, 1)
+                                    report_placeholder.markdown(split_text[0], unsafe_allow_html=True)
+                                    st.pyplot(chart_data[chart]['fig'])
+                                    current_text = split_text[1]
+                        if current_text:
+                            report_placeholder.markdown(current_text, unsafe_allow_html=True)
             
-            with st.expander("❓ AI统计问答", expanded=False):
-                user_question = st.text_area(
-                    "输入你的问题",
-                    placeholder="示例：分析generation_mw和demand_mw的相关性；用t检验比较两组数据",
-                    height=100
-                )
+            with st.expander("❓ AI统计问答（固定格式）", expanded=False):
+                user_question = st.text_area("输入你的数据分析问题", placeholder="示例：分析A和B的相关性并解读；用t检验比较两组数据的均值差异；总结数据的核心分布特征", height=100)
                 if st.button("💬 发送问题") and user_question:
-                    st.markdown("### AI解答结果")
-                    prompt = f"""你是统计分析师，基于以下数据概况解答问题，要求：
-1. 回答简洁专业，贴合科研分析；
-2. 不编造任何数据。
+                    st.markdown("### 📝 AI标准化解答")
+                    q_prompt = """你是专业统计分析师，解答问题需严格遵循以下固定格式，语言专业简洁，仅基于数据概况分析，不编造任何内容：
+## 问题解答：
+1. 分析方法：明确解答该问题需使用的统计分析方法，说明方法适用场景
+2. 操作步骤：分点说明使用该方法的具体操作步骤，适配本平台功能
+3. 结果解读：说明该方法结果的判断标准（如p<0.05为显著），明确核心指标解读方式
+4. 结论建议：基于数据概况，给出针对性的分析建议或注意事项
 
-数据概况：{data_overview}
-我的问题：{user_question}
-"""
-                    stream = call_deepseek_api(prompt)
+### 数据概况：
+""" + data_overview + f"""
+### 待解答问题：{user_question}
+### 约束：
+1. 严格遵循上述格式，不得删减章节，编号与标题完全一致；
+2. 仅基于数据概况解答，不编造任何数据/变量/统计结果；
+3. 语言专业、简洁，适配科研数据分析场景，多次解答格式统一。"""
+                    stream = call_deepseek_api(q_prompt, temperature=0.2)
                     st.write_stream(stream)
             
-            with st.expander("📈 AI结果解读", expanded=False):
-                user_result = st.text_area(
-                    "粘贴你的统计结果",
-                    placeholder="示例：相关系数0.78，p=0.001；R²=0.82",
-                    height=100
-                )
+            with st.expander("📈 AI结果解读（固定格式）", expanded=False):
+                user_result = st.text_area("粘贴你的统计分析结果", placeholder="示例：皮尔逊相关系数0.78，p=0.001；t检验t=2.35，p=0.02；线性回归R²=0.82", height=100)
                 if st.button("🔍 解读结果") and user_result:
-                    st.markdown("### AI解读结果")
-                    prompt = f"""你是统计分析师，解读以下统计结果，要求：
-1. 说明统计意义和研究意义；
-2. 分点对应输入内容。
+                    st.markdown("### 📝 AI标准化结果解读")
+                    r_prompt = """你是专业统计分析师，解读统计结果需严格遵循以下固定格式，语言专业简洁，逐点解读，不编造任何内容：
+## 统计结果解读报告
+1. 指标解读：逐点解读每个统计指标的核心含义，说明指标的统计意义
+2. 显著性判断：明确每个结果的显著性水平（p<0.05为显著，p<0.01为极显著，p>0.05为不显著）
+3. 实际意义：结合数据概况，解读每个结果的实际研究/分析意义，说明结果反映的问题/规律
+4. 综合结论：综合所有结果，给出1-2句核心综合结论，简洁明确
 
-数据概况：{data_overview}
-我的统计结果：{user_result}
-"""
-                    stream = call_deepseek_api(prompt)
+### 数据概况：
+""" + data_overview + f"""
+### 待解读统计结果：{user_result}
+### 约束：
+1. 严格遵循上述格式，不得删减章节，编号与标题完全一致；
+2. 逐点对应输入的统计结果，不遗漏、不编造；
+3. 明确显著性判断标准，解读贴合数据实际；
+4. 语言专业、简洁，适配科研数据分析场景，多次解读格式统一。"""
+                    stream = call_deepseek_api(r_prompt, temperature=0.2)
                     st.write_stream(stream)
 else:
-    st.info("💡 请在【左侧边栏】上传CSV/Excel数据文件，即可开始分析")
-    st.markdown("#### 📌 功能说明")
-    st.markdown("- 包含SPSS核心统计分析功能，操作更简易")
-    st.markdown("- AI基于真实统计+图表生成结论，无虚假内容")
-    st.markdown("- 支持自动分析、统计问答、结果解读，所有结果可直接复制")
+    st.info("💡 请在【左侧边栏】上传CSV/Excel数据文件，即可开始全功能分析")
+    st.markdown("#### 📌 核心功能亮点")
+    st.markdown("- 集成SPSS核心统计功能，操作简易，结果精准")
+    st.markdown("- AI分析支持**图文嵌排**，图表嵌入解答对应位置，排版美观")
+    st.markdown("- AI输出**固定统一格式**，不同文件/多次分析格式高度一致")
+    st.markdown("- 图表生成带异常捕获，单图失败不中断，自动跳过继续分析")
+    st.markdown("- 所有分析基于真实统计结果，AI不编造任何数据/图表")
