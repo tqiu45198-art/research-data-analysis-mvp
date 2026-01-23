@@ -247,6 +247,13 @@ def plot_chart(df, plot_type, x_col, y_col=None, group_col=None):
     fig.update_layout(width=800, height=500)
     return fig
 
+# 新增：Matplotlib图转字节流（避免直接渲染的兼容性问题）
+def matplotlib_to_bytes(fig):
+    buf = io.BytesIO()
+    fig.savefig(buf, format='png', bbox_inches='tight')
+    buf.seek(0)
+    return buf
+
 st.title("科研数据分析平台")
 st.divider()
 
@@ -414,7 +421,7 @@ if df is not None and var_types is not None:
                         text = ax.text(j, i, corr_res['相关矩阵'].iloc[i, j], ha="center", va="center", color="black")
                 cbar = ax.figure.colorbar(im, ax=ax)
                 plt.tight_layout()
-                st.pyplot(fig)
+                st.image(matplotlib_to_bytes(fig), use_container_width=True)
 
     with tab6:
         st.subheader("回归分析")
@@ -491,7 +498,7 @@ if df is not None and var_types is not None:
                                         text = ax_corr.text(j, i, corr_res['相关矩阵'].iloc[i, j], ha="center", va="center", color="black")
                                 cbar_corr = ax_corr.figure.colorbar(im_corr, ax=ax_corr)
                                 plt.tight_layout()
-                                chart_data['图1'] = {'fig': fig_corr, 'type': 'matplotlib', 'name': '数值变量相关热力图', 'desc': '展示各数值型变量间皮尔逊相关系数的强弱与正负相关方向，系数越接近1/ -1表示相关性越强，0表示无线性相关'}
+                                chart_data['图1'] = {'data': matplotlib_to_bytes(fig_corr), 'type': 'image', 'name': '数值变量相关热力图', 'desc': '展示各数值型变量间皮尔逊相关系数的强弱与正负相关方向，系数越接近1/ -1表示相关性越强，0表示无线性相关'}
                         except Exception as e:
                             pass
 
@@ -571,8 +578,8 @@ if df is not None and var_types is not None:
                                 if chart in current_text:
                                     split_text = current_text.split(chart, 1)
                                     report_placeholder.markdown(split_text[0], unsafe_allow_html=True)
-                                    if chart_data[chart]['type'] == 'matplotlib':
-                                        st.pyplot(chart_data[chart]['fig'], key=f"plt_{chart}")
+                                    if chart_data[chart]['type'] == 'image':
+                                        st.image(chart_data[chart]['data'], use_container_width=True, key=f"img_{chart}")
                                     else:
                                         st.plotly_chart(chart_data[chart]['fig'], use_container_width=True, key=f"plotly_{chart}")
                                     current_text = split_text[1]
