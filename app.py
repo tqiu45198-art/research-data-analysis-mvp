@@ -1,4 +1,3 @@
-# 完整app.py（无注释，AI分析图文嵌排+固定统一格式）
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -492,7 +491,7 @@ if df is not None and var_types is not None:
                                         text = ax_corr.text(j, i, corr_res['相关矩阵'].iloc[i, j], ha="center", va="center", color="black")
                                 cbar_corr = ax_corr.figure.colorbar(im_corr, ax=ax_corr)
                                 plt.tight_layout()
-                                chart_data['图1'] = {'fig': fig_corr, 'name': '数值变量相关热力图', 'desc': '展示各数值型变量间皮尔逊相关系数的强弱与正负相关方向，系数越接近1/ -1表示相关性越强，0表示无线性相关'}
+                                chart_data['图1'] = {'fig': fig_corr, 'type': 'matplotlib', 'name': '数值变量相关热力图', 'desc': '展示各数值型变量间皮尔逊相关系数的强弱与正负相关方向，系数越接近1/ -1表示相关性越强，0表示无线性相关'}
                         except Exception as e:
                             pass
 
@@ -500,7 +499,7 @@ if df is not None and var_types is not None:
                             if len(var_types['numeric'])>=2:
                                 num1, num2 = var_types['numeric'][0], var_types['numeric'][1]
                                 fig_line = px.line(df.head(1000), x=df.head(1000).index, y=[num1, num2], title=f"{num1}与{num2}趋势变化对比", width=800, height=400)
-                                chart_data['图2'] = {'fig': fig_line, 'name': f'{num1}与{num2}趋势折线图', 'desc': f'展示{num1}和{num2}前1000条数据的时间序列趋势变化，可直观对比两者的波动规律与变化一致性'}
+                                chart_data['图2'] = {'fig': fig_line, 'type': 'plotly', 'name': f'{num1}与{num2}趋势折线图', 'desc': f'展示{num1}和{num2}前1000条数据的时间序列趋势变化，可直观对比两者的波动规律与变化一致性'}
                         except Exception as e:
                             pass
 
@@ -509,7 +508,7 @@ if df is not None and var_types is not None:
                                 cat_col = var_types['categorical'][0]
                                 freq_df = freq_res[cat_col].reset_index().rename(columns={'index': cat_col})
                                 fig_bar = px.bar(freq_df, x=cat_col, y='频数', title=f"{cat_col}频数分布", width=800, height=400, text_auto=True)
-                                chart_data['图3'] = {'fig': fig_bar, 'name': f'{cat_col}频数分布条形图', 'desc': f'展示分类型变量{cat_col}各类型的频数与占比情况，可直观判断该变量的分布特征与主要类别构成'}
+                                chart_data['图3'] = {'fig': fig_bar, 'type': 'plotly', 'name': f'{cat_col}频数分布条形图', 'desc': f'展示分类型变量{cat_col}各类型的频数与占比情况，可直观判断该变量的分布特征与主要类别构成'}
                         except Exception as e:
                             pass
 
@@ -572,7 +571,10 @@ if df is not None and var_types is not None:
                                 if chart in current_text:
                                     split_text = current_text.split(chart, 1)
                                     report_placeholder.markdown(split_text[0], unsafe_allow_html=True)
-                                    st.pyplot(chart_data[chart]['fig'])
+                                    if chart_data[chart]['type'] == 'matplotlib':
+                                        st.pyplot(chart_data[chart]['fig'])
+                                    else:
+                                        st.plotly_chart(chart_data[chart]['fig'], use_container_width=True)
                                     current_text = split_text[1]
                         if current_text:
                             report_placeholder.markdown(current_text, unsafe_allow_html=True)
