@@ -1,3 +1,4 @@
 libopenblas-dev
 gfortran
 liblapack-dev
+apt-utils 
