@@ -12,7 +12,7 @@ from datetime import datetime
 from openai import OpenAI
 
 warnings.filterwarnings('ignore')
-# 优化：兼容云环境无SimHei字体，避免中文乱码/报错
+# 兼容云环境无SimHei字体，避免中文乱码
 plt.rcParams['font.sans-serif'] = ['SimHei', 'DejaVu Sans', 'Arial Unicode MS', 'sans-serif']
 plt.rcParams['axes.unicode_minus'] = False
 st.set_page_config(page_title="科研数据分析平台", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
@@ -30,7 +30,7 @@ try:
 except ImportError as e:
     st.error(f"分析库导入失败：{e}")
 
-def call_deepseek_api(prompt, model="deepseek-chat", temperature=0.2):  # 优化：调低温度，保证输出格式稳定
+def call_deepseek_api(prompt, model="deepseek-chat", temperature=0.2):
     if "DEEPSEEK_API_KEY" not in st.secrets:
         return iter(["❌ 未配置API密钥：请在Streamlit Cloud → Settings → Secrets中添加 DEEPSEEK_API_KEY = '你的密钥'"])
     api_key = st.secrets["DEEPSEEK_API_KEY"]
@@ -46,7 +46,7 @@ def call_deepseek_api(prompt, model="deepseek-chat", temperature=0.2):  # 优化
             model=model,
             messages=[{"role": "user", "content": prompt}],
             temperature=temperature,
-            max_tokens=3072,  # 优化：增加最大令牌，支持更长报告
+            max_tokens=3072,
             stream=True
         )
         def stream_generator():
@@ -242,13 +242,13 @@ def plot_chart(df, plot_type, x_col, y_col=None, group_col=None):
     elif plot_type == '折线图':
         fig = px.line(df, x=x_col, y=y_col, color=group_col, title=f'{x_col} - {y_col} 趋势折线图')
     elif plot_type == '饼图':
-        fig = px.pie(df, names=x_col, values=y_col, title=f'{x_col} 占比饼图', hole=0.2)  # 优化：增加空心饼图，更美观
+        fig = px.pie(df, names=x_col, values=y_col, title=f'{x_col} 占比饼图', hole=0.2)
     elif plot_type == '箱图':
         fig = px.box(df, x=x_col, y=y_col, color=group_col, title=f'{x_col} - {y_col} 分布箱图')
-    fig.update_layout(width=800, height=500, font=dict(size=12))  # 优化：统一字体大小
+    fig.update_layout(width=800, height=500, font=dict(size=12))
     return fig
 
-# ===== 页面主逻辑（原有无报错，仅增量优化）=====
+# ===== 页面主逻辑 =====
 st.title("📊 科研数据分析平台")
 st.divider()
 
@@ -306,7 +306,7 @@ if df is not None and var_types is not None:
 4. 二分类变量：{', '.join(var_types['binary_categorical']) if var_types['binary_categorical'] else '无'}
 5. 时间型变量：{', '.join(var_types['datetime']) if var_types['datetime'] else '无'}"""
 
-    # 新建标签页（原有顺序不变）
+    # 新建标签页
     tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
         "数据处理", "基本统计", "均值检验", "方差分析", "相关分析", "回归分析", "可视化", "🤖 AI分析"
     ])
@@ -316,14 +316,15 @@ if df is not None and var_types is not None:
         # 排序
         with st.expander("🔽 数据排序", expanded=True):
             sort_col = st.selectbox("排序字段", df.columns, key='sort')
-            sort_asc = st.radio("排序方式", ['升序', '降序'], key='sort_asc', horizontal=True)
+            sort_asc = st.radio("排序方式", ['升序', '降序'], key='sort_asc', horizontal=True)  # radio支持horizontal
             if st.button("执行排序", key='btn_sort'):
                 df_sorted = df.sort_values(by=sort_col, ascending=(sort_asc=='升序'))
                 st.dataframe(df_sorted.head(15), use_container_width=True)
         # 筛选
         with st.expander("🔍 数据筛选", expanded=True):
             filter_col = st.selectbox("筛选字段", df.columns, key='filter')
-            filter_op = st.selectbox("运算符", ['>', '<', '>=', '<=', '==', '!='], key='filter_op', horizontal=True)
+            # 修复：selectbox无horizontal参数，删除horizontal=True
+            filter_op = st.selectbox("运算符", ['>', '<', '>=', '<=', '==', '!='], key='filter_op')
             filter_val = st.text_input("筛选值（数值/文本）", key='filter_val', placeholder="例：100 / 男")
             if st.button("执行筛选", key='btn_filter'):
                 try:
@@ -338,12 +339,12 @@ if df is not None and var_types is not None:
         with st.expander("📊 分类汇总", expanded=True):
             group_col = st.selectbox("分组字段", var_types['categorical'], key='group', disabled=not var_types['categorical'])
             agg_col = st.selectbox("汇总字段", var_types['numeric'], key='agg', disabled=not var_types['numeric'])
-            agg_func = st.selectbox("汇总方式", ['均值', '求和', '计数', '最大值', '最小值'], key='agg_func', horizontal=True)
+            # 修复：selectbox无horizontal参数，删除horizontal=True
+            agg_func = st.selectbox("汇总方式", ['均值', '求和', '计数', '最大值', '最小值'], key='agg_func')
             agg_map = {'均值':'mean', '求和':'sum', '计数':'count', '最大值':'max', '最小值':'min'}
             if st.button("执行分类汇总", key='btn_agg', disabled=not (group_col and agg_col)):
                 df_agg = df.groupby(group_col)[agg_col].agg(agg_map[agg_func]).round(2)
                 st.dataframe(df_agg, use_container_width=True)
-                # 快速可视化汇总结果
                 fig_agg = px.bar(df_agg.reset_index(), x=group_col, y=agg_col, title=f"{group_col} - {agg_col}（{agg_func}）")
                 st.plotly_chart(fig_agg, use_container_width=True)
 
@@ -357,7 +358,6 @@ if df is not None and var_types is not None:
                 for col in freq_cols:
                     st.subheader(f"🔍 {col} 频数/频率分布")
                     st.dataframe(freq_dict[col], use_container_width=True)
-                    # 快速生成频数条形图
                     freq_df = freq_dict[col].reset_index().rename(columns={'index': col})
                     fig_freq = px.bar(freq_df, x=col, y='频数', text_auto=True, title=f"{col} 频数分布")
                     st.plotly_chart(fig_freq, use_container_width=True)
@@ -380,7 +380,6 @@ if df is not None and var_types is not None:
                     st.subheader("📈 卡方检验结果")
                     st.info(f"卡方值：{cont_res['卡方值']} | p值：{cont_res['p值']} | 自由度：{cont_res['自由度']}")
                     st.info(f"克莱姆V系数：{cont_res['克莱姆V系数']}（0-1，越大相关性越强）")
-                    # 显著性判断
                     if cont_res['p值'] < 0.05:
                         st.success("✅ p<0.05，两个分类变量存在显著的相关性！")
                     else:
@@ -423,6 +422,7 @@ if df is not None and var_types is not None:
                         st.warning("⚠️ p≥0.05，两组样本均值无显著差异！")
         # 非参数检验
         with st.expander("📊 非参数检验", expanded=True):
+            # 修复：selectbox无horizontal参数，删除horizontal=True
             test_type = st.selectbox("检验类型", ['单样本K-S检验', '二项分布检验', '两独立样本Mann-Whitney U检验'], key='test_type')
             np_col = st.selectbox("检验变量（数值型）", var_types['numeric'], key='np', disabled=not var_types['numeric'])
             np_group = st.selectbox("分组变量（仅U检验需选）", [None] + var_types['categorical'], key='np_group', disabled=test_type not in ['两独立样本Mann-Whitney U检验'])
@@ -434,7 +434,6 @@ if df is not None and var_types is not None:
                     st.subheader(f"🔍 {test_type} 结果")
                     for k, v in np_res.items():
                         st.info(f"{k}：{v}")
-                    # 显著性判断
                     if 'p值' in np_res and np_res['p值'] < 0.05:
                         st.success("✅ p<0.05，检验结果存在显著差异/不符合正态分布！")
                     elif 'p值' in np_res:
@@ -450,7 +449,6 @@ if df is not None and var_types is not None:
                 anova_res = anova_analysis(df, formula, '单因素方差分析')
                 st.subheader("📈 单因素方差分析表")
                 st.dataframe(anova_res['方差分析表'], use_container_width=True)
-                # 方差分析显著性判断
                 anova_p = anova_res['方差分析表']['PR(>F)'].iloc[0]
                 if anova_p < 0.05:
                     st.success("✅ p<0.05，各分组均值存在显著整体差异，需看事后检验！")
@@ -476,7 +474,7 @@ if df is not None and var_types is not None:
                 st.dataframe(corr_res['相关矩阵'], use_container_width=True)
                 st.subheader(f"📊 相关分析p值矩阵（p<0.05为显著）")
                 st.dataframe(corr_res['p值矩阵'], use_container_width=True)
-                # 绘制相关热力图（保留原有st.pyplot，稳定无报错）
+                # 绘制相关热力图
                 st.subheader(f"📊 相关系数热力图")
                 fig, ax = plt.subplots(figsize=(10, 8))
                 im = ax.imshow(corr_res['相关矩阵'], cmap='RdBu_r', vmin=-1, vmax=1)
@@ -489,7 +487,6 @@ if df is not None and var_types is not None:
                     for j in range(len(corr_cols)):
                         corr_val = corr_res['相关矩阵'].iloc[i, j]
                         p_val = corr_res['p值矩阵'].iloc[i, j]
-                        # 显著性标记：**p<0.01，*p<0.05，无标记p≥0.05
                         mark = '**' if p_val < 0.01 else '*' if p_val < 0.05 else ''
                         text = ax.text(j, i, f"{corr_val:.3f}{mark}", ha="center", va="center", color="black", fontsize=9)
                 cbar = ax.figure.colorbar(im, ax=ax)
@@ -502,14 +499,11 @@ if df is not None and var_types is not None:
         st.subheader("📈 回归分析")
         reg_type = st.selectbox("回归类型", ['线性回归（数值因变量）', '二分类Logistic回归（二分类因变量）'], key='reg_type')
         reg_type_map = {'线性回归（数值因变量）':'线性回归', '二分类Logistic回归（二分类因变量）':'二分类Logistic回归'}
-        # 按回归类型选择因变量
         if reg_type == '线性回归（数值因变量）':
             reg_target = st.selectbox("因变量（数值型）", var_types['numeric'], key='reg_target')
         else:
             reg_target = st.selectbox("因变量（二分类）", var_types['binary_categorical'], key='reg_target', disabled=not var_types['binary_categorical'])
-        # 选择自变量（排除因变量）
         reg_features = st.multiselect("自变量（数值型，至少1个）", [col for col in var_types['numeric'] if col != reg_target], key='reg_features')
-        # 按钮禁用逻辑
         btn_disabled = False
         if reg_type == '二分类Logistic回归（二分类因变量）' and not var_types['binary_categorical']:
             btn_disabled = True
@@ -532,16 +526,14 @@ if df is not None and var_types is not None:
     with tab7:
         st.subheader("🎨 自定义可视化分析")
         plot_type = st.selectbox("选择图表类型", ['条形图', '折线图', '饼图', '箱图'], key='plot_type')
-        # 按图表类型选择变量
         if plot_type in ['条形图', '折线图', '箱图']:
             x_col = st.selectbox("X轴变量", df.columns, key='plot_x')
             y_col = st.selectbox("Y轴变量（数值型）", var_types['numeric'], key='plot_y')
             group_col = st.selectbox("分组变量（可选，无则不分组）", [None] + var_types['categorical'], key='plot_group')
-        else:  # 饼图
+        else:
             x_col = st.selectbox("类别变量（饼图分组）", var_types['categorical'], key='plot_x_pie')
             y_col = st.selectbox("数值变量（饼图数值）", var_types['numeric'], key='plot_y_pie')
             group_col = None
-        # 生成图表
         if st.button("🎯 生成自定义图表", key='btn_plot'):
             try:
                 fig = plot_chart(df, plot_type, x_col, y_col, group_col)
@@ -565,11 +557,11 @@ if df is not None and var_types is not None:
             st.success("✅ API密钥已配置 | AI基于**真实统计结果+可视化图表**生成分析报告 | 无编造内容")
             st.markdown("---")
 
-            # 1. AI自动数据分析（核心功能，优化固定格式）
+            # 1. AI自动数据分析
             with st.expander("📑 AI自动数据分析（生成标准化科研报告）", expanded=True):
                 if st.button("🚀 开始AI自动分析", key='btn_ai_analysis'):
                     with st.spinner("🌀 正在计算真实统计结果+生成可视化图表，请稍候（约10秒）..."):
-                        # ===== 步骤1：生成真实统计结果（保留原有逻辑）=====
+                        # 步骤1：生成真实统计结果
                         desc_res = descriptive_analysis(df, var_types['numeric']) if var_types['numeric'] else "无数值型变量，无描述统计结果"
                         desc_text = desc_res.to_string() if var_types['numeric'] else "无数值型变量，无描述统计结果"
                         
@@ -595,11 +587,11 @@ if df is not None and var_types is not None:
                                 ttest_text += f"{list(ttest_res.keys())[2]}={ttest_res[list(ttest_res.keys())[2]]}，"
                                 ttest_text += f"{list(ttest_res.keys())[3]}={ttest_res[list(ttest_res.keys())[3]]}"
 
-                        # ===== 步骤2：生成真实可视化图表（核心修复：取消硬编码，通用适配所有数据）=====
+                        # 步骤2：生成真实可视化图表（异常捕获）
                         st.markdown("### 📊 真实可视化图表（基于你的数据生成）")
-                        chart_desc = []  # 存储图表描述，给AI分析用
+                        chart_desc = []
 
-                        # 图1：数值变量相关热力图（异常捕获，失败则跳过）
+                        # 图1：数值变量相关热力图
                         try:
                             if len(var_types['numeric'])>=2 and isinstance(corr_res, dict):
                                 st.subheader("🔍 图1：数值变量Pearson相关热力图")
@@ -620,10 +612,10 @@ if df is not None and var_types is not None:
                         except Exception as e:
                             st.warning(f"⚠️ 图1（相关热力图）生成失败：{str(e)[:50]}，已跳过")
 
-                        # 图2：前两个数值变量趋势折线图（核心修复：取消硬编码，通用适配所有数据）
+                        # 图2：前两个数值变量趋势折线图（通用适配）
                         try:
                             if len(var_types['numeric'])>=2:
-                                num1, num2 = var_types['numeric'][0], var_types['numeric'][1]  # 取前两个数值变量，通用
+                                num1, num2 = var_types['numeric'][0], var_types['numeric'][1]
                                 st.subheader(f"🔍 图2：{num1} 与 {num2} 趋势折线图（前1000条）")
                                 fig_line = px.line(df.head(1000), x=df.head(1000).index, y=[num1, num2], 
                                                   title=f"{num1} vs {num2} 趋势变化对比", width=800, height=400)
@@ -633,7 +625,7 @@ if df is not None and var_types is not None:
                         except Exception as e:
                             st.warning(f"⚠️ 图2（趋势折线图）生成失败：{str(e)[:50]}，已跳过")
 
-                        # 图3：第一个分类变量频数条形图（保留原有逻辑，异常捕获）
+                        # 图3：第一个分类变量频数条形图
                         try:
                             if var_types['categorical'] and isinstance(freq_res, dict):
                                 cat_col = var_types['categorical'][0]
@@ -646,7 +638,7 @@ if df is not None and var_types is not None:
                         except Exception as e:
                             st.warning(f"⚠️ 图3（频数条形图）生成失败：{str(e)[:50]}，已跳过")
 
-                        # ===== 步骤3：整合统计+图表信息，构造AI提示词（核心优化：固定科研报告格式）=====
+                        # 步骤3：整合统计+图表信息
                         real_info = f"""【数据基础概况】
 {data_overview}
 
@@ -665,7 +657,7 @@ if df is not None and var_types is not None:
 【成功生成的可视化图表】
 {"；".join(chart_desc) if chart_desc else "无可用可视化图表"}"""
 
-                        # AI提示词：固定科研报告格式，要求严格遵循
+                        # AI提示词（固定科研报告格式）
                         prompt = f"""你是**资深科研数据分析专家**，专注于科研场景的数据分析与报告撰写，需基于以下**真实的统计结果和可视化图表**生成标准化科研分析报告，严格遵守以下要求：
 
 ### 【输出格式要求（必须严格遵循，不得删减/修改章节）】
@@ -698,13 +690,13 @@ if df is not None and var_types is not None:
 ### 【本次分析的真实统计与图表信息】
 {real_info}"""
 
-                        # ===== 步骤4：调用AI并展示结果 =====
+                        # 调用AI并展示结果
                         st.markdown("### 📋 AI标准化科研分析报告（基于真实数据，可直接复制到论文/报告）")
                         st.divider()
                         stream = call_deepseek_api(prompt)
                         st.write_stream(stream)
 
-            # 2. AI统计问答（优化固定格式，更专业）
+            # 2. AI统计问答
             with st.expander("❓ AI统计问答（针对性解答你的分析问题）", expanded=False):
                 user_question = st.text_area(
                     "请输入你的数据分析问题（示例见占位符）",
@@ -735,7 +727,7 @@ if df is not None and var_types is not None:
                     stream = call_deepseek_api(prompt)
                     st.write_stream(stream)
 
-            # 3. AI结果解读（优化固定格式，分点解读）
+            # 3. AI结果解读
             with st.expander("📈 AI统计结果解读（解读你的手动分析结果）", expanded=False):
                 user_result = st.text_area(
                     "请粘贴你的统计分析结果（示例见占位符）",
@@ -766,7 +758,6 @@ if df is not None and var_types is not None:
 {user_result}"""
                     stream = call_deepseek_api(prompt)
                     st.write_stream(stream)
-# 未上传数据时的引导
 else:
     st.info("💡 请在【左侧边栏】上传**CSV/Excel**数据文件，即可开始全功能的科研数据分析～")
     st.markdown("#### 📌 平台核心功能亮点")
