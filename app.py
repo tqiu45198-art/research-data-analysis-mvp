@@ -572,9 +572,9 @@ if df is not None and var_types is not None:
                                     split_text = current_text.split(chart, 1)
                                     report_placeholder.markdown(split_text[0], unsafe_allow_html=True)
                                     if chart_data[chart]['type'] == 'matplotlib':
-                                        st.pyplot(chart_data[chart]['fig'])
+                                        st.pyplot(chart_data[chart]['fig'], key=f"plt_{chart}")
                                     else:
-                                        st.plotly_chart(chart_data[chart]['fig'], use_container_width=True)
+                                        st.plotly_chart(chart_data[chart]['fig'], use_container_width=True, key=f"plotly_{chart}")
                                     current_text = split_text[1]
                         if current_text:
                             report_placeholder.markdown(current_text, unsafe_allow_html=True)
