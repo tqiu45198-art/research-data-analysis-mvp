@@ -11,11 +11,16 @@ import re
 from datetime import datetime
 from openai import OpenAI
 
+# 关闭无关警告
 warnings.filterwarnings('ignore')
-plt.rcParams['font.sans-serif'] = ['SimHei']
+# 配置Matplotlib中文显示（适配云环境）
+plt.rcParams['font.sans-serif'] = ['DejaVu Sans', 'SimHei']
 plt.rcParams['axes.unicode_minus'] = False
+plt.rcParams['font.family'] = 'sans-serif'
+# 配置Streamlit页面
 st.set_page_config(page_title="科研数据分析平台", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
 
+# 导入统计/机器学习库（带异常捕获）
 try:
     from scipy.stats import chi2_contingency, ttest_1samp, ttest_ind, ttest_rel, ks_2samp, mannwhitneyu, kruskal, friedmanchisquare, wilcoxon
     from statsmodels.stats.proportion import binom_test as sm_binom_test
@@ -29,6 +34,7 @@ try:
 except ImportError as e:
     st.error(f"分析库导入失败：{e}")
 
+# DeepSeek API调用函数
 def call_deepseek_api(prompt, model="deepseek-chat", temperature=0.2):
     if "DEEPSEEK_API_KEY" not in st.secrets:
         return iter(["❌ 未配置API密钥：请在Streamlit Cloud → Settings → Secrets中添加 DEEPSEEK_API_KEY = '你的密钥'"])
@@ -66,6 +72,7 @@ def call_deepseek_api(prompt, model="deepseek-chat", temperature=0.2):
     except Exception as e:
         return iter([f"❌ API调用失败：{str(e)}"])
 
+# 数据加载与清洗函数
 def load_and_clean_data(file):
     encodings = ['utf-8-sig', 'gbk', 'utf-8', 'gb2312']
     seps = [',', '\t', ';']
@@ -90,6 +97,7 @@ def load_and_clean_data(file):
                 df = pd.read_csv(file, encoding='utf-8-sig', sep=delimiter, on_bad_lines='skip')
         else:
             df = pd.read_excel(file, engine='openpyxl')
+        # 清洗列名
         df.columns = [re.sub(r'[^\w\s\u4e00-\u9fa5/]', '', str(col)).strip() for col in df.columns]
         df.columns = [col if col else f"col_{i}" for i, col in enumerate(df.columns)]
         return df
@@ -97,12 +105,14 @@ def load_and_clean_data(file):
         st.error(f"文件读取失败：{str(e)}")
         return None
 
+# 变量类型识别函数
 def identify_variable_types(df):
     numeric_cols = []
     categorical_cols = []
     binary_categorical_cols = []
     datetime_cols = []
     for col in df.columns:
+        # 识别时间列
         if any(fmt in col.lower() for fmt in ['date', 'time', '2016', '2017', '2018', '2019', '2020']):
             try:
                 df[col] = pd.to_datetime(df[col])
@@ -110,6 +120,7 @@ def identify_variable_types(df):
                 continue
             except:
                 pass
+        # 识别数值列/分类列
         try:
             df[col] = pd.to_numeric(df[col], errors='raise')
             numeric_cols.append(col)
@@ -119,6 +130,7 @@ def identify_variable_types(df):
                 binary_categorical_cols.append(col)
     return {'numeric': numeric_cols, 'categorical': categorical_cols, 'binary_categorical': binary_categorical_cols, 'datetime': datetime_cols}
 
+# 频数分析
 def frequency_analysis(df, categorical_cols):
     freq_dict = {}
     for col in categorical_cols:
@@ -128,6 +140,7 @@ def frequency_analysis(df, categorical_cols):
         freq_dict[col] = freq_df
     return freq_dict
 
+# 描述性统计
 def descriptive_analysis(df, numeric_cols):
     desc_df = df[numeric_cols].describe().T
     desc_df['缺失值'] = df[numeric_cols].isnull().sum()
@@ -136,17 +149,20 @@ def descriptive_analysis(df, numeric_cols):
     desc_df['峰度'] = df[numeric_cols].kurt().round(3)
     return desc_df
 
+# 联列表+卡方检验
 def contingency_table_analysis(df, col1, col2):
     cont_table = pd.crosstab(df[col1], df[col2])
     chi2, p, dof, expected = chi2_contingency(cont_table)
     cramers_v = np.sqrt(chi2 / (len(df) * min(cont_table.shape[0]-1, cont_table.shape[1]-1)))
     return {'联列表': cont_table, '卡方值': chi2.round(3), 'p值': p.round(4), '自由度': dof, '克莱姆V系数': cramers_v.round(3)}
 
+# 单样本t检验
 def t_test_onesample(df, numeric_col, popmean):
     data = df[numeric_col].dropna()
     t_stat, p_value = ttest_1samp(data, popmean)
     return {'t值': t_stat.round(3), 'p值': p_value.round(4), '均值': data.mean().round(2), '样本量': len(data)}
 
+# 两独立样本t检验
 def t_test_independent(df, numeric_col, group_col):
     groups = df[group_col].unique()
     if len(groups) != 2:
@@ -156,6 +172,7 @@ def t_test_independent(df, numeric_col, group_col):
     t_stat, p_value = ttest_ind(group1, group2, equal_var=False)
     return {'t值': t_stat.round(3), 'p值': p_value.round(4), f'{groups[0]}均值': group1.mean().round(2), f'{groups[1]}均值': group2.mean().round(2), f'{groups[0]}样本量': len(group1), f'{groups[1]}样本量': len(group2)}
 
+# 非参数检验
 def nonparametric_test(df, test_type, numeric_col, group_col=None):
     if test_type == '单样本K-S检验':
         data = df[numeric_col].dropna()
@@ -177,12 +194,14 @@ def nonparametric_test(df, test_type, numeric_col, group_col=None):
         return {'成功次数': success, '总次数': n, 'p值': p_value.round(4)}
     return {'error': '无效检验类型'}
 
+# 方差分析
 def anova_analysis(df, formula, anova_type):
     model = ols(formula, data=df).fit()
     anova_result = anova_lm(model, typ=2)
     tukey = pairwise_tukeyhsd(df[formula.split('~')[0]], df[formula.split('~')[1].split('+')[0]], alpha=0.05)
     return {'方差分析表': anova_result, '事后检验(Tukey)': tukey.summary()}
 
+# 相关分析
 def correlation_analysis(df, cols, corr_type='pearson'):
     corr_df = df[cols].dropna()
     if corr_type == 'pearson':
@@ -203,6 +222,7 @@ def correlation_analysis(df, cols, corr_type='pearson'):
                     p_matrix.loc[col1, col2] = round(p, 4)
     return {'相关矩阵': corr_matrix.round(3), 'p值矩阵': p_matrix}
 
+# 回归分析
 def regression_analysis(df, target, features, reg_type):
     X = df[features].dropna()
     y = df[target][X.index].dropna()
@@ -225,6 +245,7 @@ def regression_analysis(df, target, features, reg_type):
         return {'分类报告': report, '系数表': coef}
     return {'error': '无效回归类型'}
 
+# 聚类分析
 def cluster_analysis(df, cols, n_clusters=3):
     X = df[cols].dropna()
     scaler = StandardScaler()
@@ -235,6 +256,7 @@ def cluster_analysis(df, cols, n_clusters=3):
     centroids = pd.DataFrame(scaler.inverse_transform(kmeans.cluster_centers_), columns=cols).round(2)
     return {'聚类结果': df_cluster, '聚类中心': centroids}
 
+# Plotly图表生成
 def plot_chart(df, plot_type, x_col, y_col=None, group_col=None):
     if plot_type == '条形图':
         fig = px.bar(df, x=x_col, y=y_col, color=group_col, barmode='group', title=f'{x_col} - {y_col}')
@@ -247,13 +269,17 @@ def plot_chart(df, plot_type, x_col, y_col=None, group_col=None):
     fig.update_layout(width=800, height=500)
     return fig
 
-# 新增：Matplotlib图转字节流（避免直接渲染的兼容性问题）
+# 核心修复：Matplotlib图转字节流（彻底替代st.pyplot）
 def matplotlib_to_bytes(fig):
     buf = io.BytesIO()
-    fig.savefig(buf, format='png', bbox_inches='tight')
+    # 保存为PNG，设置高分辨率，避免模糊
+    fig.savefig(buf, format='png', dpi=150, bbox_inches='tight', facecolor='white')
     buf.seek(0)
+    # 关闭fig，释放内存（云环境关键）
+    plt.close(fig)
     return buf
 
+# ====================== 页面主逻辑 ======================
 st.title("科研数据分析平台")
 st.divider()
 
@@ -273,6 +299,7 @@ with st.sidebar:
                 df_dict[file.name] = df_temp
                 st.success(f"{file.name} 上传成功 ({len(df_temp)}行×{len(df_temp.columns)}列)")
         
+        # 多文件合并逻辑
         if len(df_dict) >= 2:
             base_file = st.selectbox("基础文件", list(df_dict.keys()))
             df = df_dict[base_file]
@@ -289,6 +316,7 @@ with st.sidebar:
         else:
             df = df_dict[list(df_dict.keys())[0]] if df_dict else None
         
+        # 识别变量类型并展示数据概况
         if df is not None:
             var_types = identify_variable_types(df)
             st.markdown("## 📊 数据概况")
@@ -296,18 +324,22 @@ with st.sidebar:
             st.write(f"数值型变量：{len(var_types['numeric'])}个")
             st.write(f"分类型变量：{len(var_types['categorical'])}个")
 
+# 主分析逻辑（数据上传成功后执行）
 if df is not None and var_types is not None:
+    # 构造数据概况文本（给AI分析用）
     data_overview = f"""本次分析数据概况：1.数据规模：{len(df)}行 × {len(df.columns)}列 2.数值型变量：{', '.join(var_types['numeric']) if var_types['numeric'] else '无'} 3.分类型变量：{', '.join(var_types['categorical']) if var_types['categorical'] else '无'} 4.二分类变量：{', '.join(var_types['binary_categorical']) if var_types['binary_categorical'] else '无'} 5.缺失值总数：{df.isnull().sum().sum()}个，整体缺失率：{(df.isnull().sum().sum()/(df.shape[0]*df.shape[1]))*100:.2f}%"""
+    # 新建标签页
     tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(["数据处理", "基本统计", "均值检验", "方差分析", "相关分析", "回归分析", "可视化", "AI分析"])
 
     with tab1:
         st.subheader("数据处理")
+        # 排序
         sort_col = st.selectbox("排序字段", df.columns, key='sort')
         sort_asc = st.radio("排序方式", ['升序', '降序'], key='sort_asc')
         if st.button("执行排序"):
             df_sorted = df.sort_values(by=sort_col, ascending=(sort_asc=='升序'))
             st.dataframe(df_sorted.head(10), use_container_width=True)
-        
+        # 筛选
         filter_col = st.selectbox("筛选字段", df.columns, key='filter')
         filter_op = st.selectbox("运算符", ['>', '<', '>=', '<=', '==', '!='], key='filter_op')
         filter_val = st.text_input("筛选值", key='filter_val')
@@ -320,7 +352,7 @@ if df is not None and var_types is not None:
                 st.dataframe(df_filtered.head(10), use_container_width=True)
             except:
                 st.error("筛选条件错误，请检查值的类型")
-        
+        # 分类汇总
         group_col = st.selectbox("分组字段", var_types['categorical'], key='group', disabled=not var_types['categorical'])
         agg_col = st.selectbox("汇总字段", var_types['numeric'], key='agg', disabled=not var_types['numeric'])
         agg_func = st.selectbox("汇总方式", ['均值', '求和', '计数', '最大值', '最小值'], key='agg_func')
@@ -331,18 +363,19 @@ if df is not None and var_types is not None:
 
     with tab2:
         st.subheader("基本统计")
+        # 频数分析
         freq_cols = st.multiselect("选择分类型变量", var_types['categorical'], key='freq')
         if freq_cols and st.button("执行频数分析"):
             freq_dict = frequency_analysis(df, freq_cols)
             for col in freq_cols:
                 st.subheader(col)
                 st.dataframe(freq_dict[col], use_container_width=True)
-        
+        # 描述统计
         desc_cols = st.multiselect("选择数值型变量", var_types['numeric'], key='desc')
         if desc_cols and st.button("执行描述统计"):
             desc_df = descriptive_analysis(df, desc_cols)
             st.dataframe(desc_df, use_container_width=True)
-        
+        # 联列表+卡方检验
         if len(var_types['categorical'])>=2:
             cont_col1 = st.selectbox("行变量", var_types['categorical'], key='cont1')
             cont_col2 = st.selectbox("列变量", var_types['categorical'], key='cont2')
@@ -354,12 +387,13 @@ if df is not None and var_types is not None:
 
     with tab3:
         st.subheader("均值检验")
+        # 单样本t检验
         onesamp_col = st.selectbox("检验变量", var_types['numeric'], key='onesamp', disabled=not var_types['numeric'])
         popmean = st.number_input("总体均值", value=0.0, key='popmean')
         if st.button("执行单样本t检验", disabled=not onesamp_col):
             onesamp_res = t_test_onesample(df, onesamp_col, popmean)
             st.write(f"t值：{onesamp_res['t值']} | p值：{onesamp_res['p值']} | 样本均值：{onesamp_res['均值']} | 样本量：{onesamp_res['样本量']}")
-        
+        # 两独立样本t检验
         ind_col = st.selectbox("检验变量", var_types['numeric'], key='ind', disabled=not var_types['numeric'])
         ind_group = st.selectbox("分组变量", var_types['categorical'], key='ind_group', disabled=not var_types['categorical'])
         if st.button("执行两独立样本t检验", disabled=not (ind_col and ind_group)):
@@ -369,7 +403,7 @@ if df is not None and var_types is not None:
             else:
                 st.write(f"t值：{ind_res['t值']} | p值：{ind_res['p值']}")
                 st.write(f"{list(ind_res.keys())[2]}：{ind_res[list(ind_res.keys())[2]]} | {list(ind_res.keys())[3]}：{ind_res[list(ind_res.keys())[3]]}")
-        
+        # 非参数检验
         test_type = st.selectbox("非参数检验类型", ['单样本K-S检验', '二项分布检验', '两独立样本Mann-Whitney U检验'], key='test_type')
         np_col = st.selectbox("检验变量", var_types['numeric'], key='np', disabled=not var_types['numeric'])
         np_group = st.selectbox("分组变量", var_types['categorical'], key='np_group', disabled=test_type not in ['两独立样本Mann-Whitney U检验'])
@@ -409,18 +443,21 @@ if df is not None and var_types is not None:
                 st.dataframe(corr_res['相关矩阵'], use_container_width=True)
                 st.subheader("p值矩阵")
                 st.dataframe(corr_res['p值矩阵'], use_container_width=True)
-                
+                # 绘制相关热力图（Matplotlib→字节流→st.image，无st.pyplot）
                 fig, ax = plt.subplots(figsize=(10, 8))
                 im = ax.imshow(corr_res['相关矩阵'], cmap='RdBu_r', vmin=-1, vmax=1)
                 ax.set_xticks(np.arange(len(corr_cols)))
                 ax.set_yticks(np.arange(len(corr_cols)))
                 ax.set_xticklabels(corr_cols, rotation=45, ha='right')
                 ax.set_yticklabels(corr_cols)
+                # 标注相关系数
                 for i in range(len(corr_cols)):
                     for j in range(len(corr_cols)):
-                        text = ax.text(j, i, corr_res['相关矩阵'].iloc[i, j], ha="center", va="center", color="black")
+                        text = ax.text(j, i, corr_res['相关矩阵'].iloc[i, j], ha="center", va="center", color="black", fontsize=10)
                 cbar = ax.figure.colorbar(im, ax=ax)
+                cbar.set_label('相关系数', rotation=270, labelpad=20)
                 plt.tight_layout()
+                # 核心替换：用st.image显示字节流，彻底抛弃st.pyplot
                 st.image(matplotlib_to_bytes(fig), use_container_width=True)
 
     with tab6:
@@ -465,6 +502,7 @@ if df is not None and var_types is not None:
             with st.expander("📑 AI自动数据分析（核心功能）", expanded=True):
                 if st.button("🚀 开始AI自动分析"):
                     with st.spinner("正在预处理统计结果+生成可视化图表，请稍候..."):
+                        # 预处理各类统计结果
                         desc_res = descriptive_analysis(df, var_types['numeric']) if var_types['numeric'] else "无数值型变量"
                         desc_text = desc_res.to_string() if var_types['numeric'] else "无数值型变量"
                         corr_res = correlation_analysis(df, var_types['numeric'], 'pearson') if len(var_types['numeric'])>=2 else "数值型变量不足2个"
@@ -476,6 +514,7 @@ if df is not None and var_types is not None:
                                 freq_text += f"{col}：{freq_res[col].to_string()}\n"
                         else:
                             freq_text = "无分类型变量"
+                        # 预处理t检验结果
                         ttest_text = "无符合条件的二分类变量，未执行均值检验"
                         if var_types['binary_categorical'] and var_types['numeric']:
                             group_col = var_types['binary_categorical'][0]
@@ -484,7 +523,9 @@ if df is not None and var_types is not None:
                             if 'error' not in ttest_res:
                                 ttest_text = f"两独立样本t检验（{test_col}按{group_col}分组）：t值={ttest_res['t值']}，p值={ttest_res['p值']}，{list(ttest_res.keys())[2]}={ttest_res[list(ttest_res.keys())[2]]}，{list(ttest_res.keys())[3]}={ttest_res[list(ttest_res.keys())[3]]}"
 
+                        # 构造图表数据（核心修复：Matplotlib图只存字节流，类型为image）
                         chart_data = {}
+                        # 图1：相关热力图（Matplotlib）
                         try:
                             if len(var_types['numeric'])>=2:
                                 fig_corr, ax_corr = plt.subplots(figsize=(10, 8))
@@ -498,35 +539,59 @@ if df is not None and var_types is not None:
                                         text = ax_corr.text(j, i, corr_res['相关矩阵'].iloc[i, j], ha="center", va="center", color="black")
                                 cbar_corr = ax_corr.figure.colorbar(im_corr, ax=ax_corr)
                                 plt.tight_layout()
-                                chart_data['图1'] = {'data': matplotlib_to_bytes(fig_corr), 'type': 'image', 'name': '数值变量相关热力图', 'desc': '展示各数值型变量间皮尔逊相关系数的强弱与正负相关方向，系数越接近1/ -1表示相关性越强，0表示无线性相关'}
+                                # 转字节流，存入chart_data，类型为image
+                                chart_data['图1'] = {
+                                    'data': matplotlib_to_bytes(fig_corr),
+                                    'type': 'image',
+                                    'name': '数值变量相关热力图',
+                                    'desc': '展示各数值型变量间皮尔逊相关系数的强弱与正负相关方向，系数越接近1/ -1表示相关性越强，0表示无线性相关'
+                                }
                         except Exception as e:
+                            st.warning(f"图1生成失败：{str(e)}")
                             pass
 
+                        # 图2：趋势折线图（Plotly）
                         try:
                             if len(var_types['numeric'])>=2:
                                 num1, num2 = var_types['numeric'][0], var_types['numeric'][1]
                                 fig_line = px.line(df.head(1000), x=df.head(1000).index, y=[num1, num2], title=f"{num1}与{num2}趋势变化对比", width=800, height=400)
-                                chart_data['图2'] = {'fig': fig_line, 'type': 'plotly', 'name': f'{num1}与{num2}趋势折线图', 'desc': f'展示{num1}和{num2}前1000条数据的时间序列趋势变化，可直观对比两者的波动规律与变化一致性'}
+                                chart_data['图2'] = {
+                                    'fig': fig_line,
+                                    'type': 'plotly',
+                                    'name': f'{num1}与{num2}趋势折线图',
+                                    'desc': f'展示{num1}和{num2}前1000条数据的时间序列趋势变化，可直观对比两者的波动规律与变化一致性'
+                                }
                         except Exception as e:
+                            st.warning(f"图2生成失败：{str(e)}")
                             pass
 
+                        # 图3：分类频数条形图（Plotly）
                         try:
                             if var_types['categorical']:
                                 cat_col = var_types['categorical'][0]
                                 freq_df = freq_res[cat_col].reset_index().rename(columns={'index': cat_col})
                                 fig_bar = px.bar(freq_df, x=cat_col, y='频数', title=f"{cat_col}频数分布", width=800, height=400, text_auto=True)
-                                chart_data['图3'] = {'fig': fig_bar, 'type': 'plotly', 'name': f'{cat_col}频数分布条形图', 'desc': f'展示分类型变量{cat_col}各类型的频数与占比情况，可直观判断该变量的分布特征与主要类别构成'}
+                                chart_data['图3'] = {
+                                    'fig': fig_bar,
+                                    'type': 'plotly',
+                                    'name': f'{cat_col}频数分布条形图',
+                                    'desc': f'展示分类型变量{cat_col}各类型的频数与占比情况，可直观判断该变量的分布特征与主要类别构成'
+                                }
                         except Exception as e:
+                            st.warning(f"图3生成失败：{str(e)}")
                             pass
 
+                        # 构造图表描述文本
                         chart_names = list(chart_data.keys())
                         chart_desc = "\n".join([f"{k}：{v['name']} - {v['desc']}" for k, v in chart_data.items()]) if chart_data else "无可用可视化图表"
+                        # 构造真实统计结果文本
                         real_stats = f"""【描述统计结果】：{desc_text}
 【相关矩阵结果】：{corr_text}
 【分类变量频数】：{freq_text}
 【均值检验结果】：{ttest_text}
 【可用可视化图表】：{chart_desc}"""
 
+                        # AI分析提示词（固定格式）
                         prompt = """你是资深科研数据分析专家，专注于基于真实统计结果和可视化图表生成标准化分析报告，严格按照以下要求输出，任何情况下不得改变格式、不得删减章节、不得编造任何数据/图表，仅基于提供的真实信息分析：
 ### 固定输出格式要求（必须严格遵守，章节顺序、标题层级、标点符号完全一致）：
 # 数据统计分析报告
@@ -566,6 +631,7 @@ if df is not None and var_types is not None:
 2. 严格按照固定格式输出，章节完整、层级清晰，多次分析格式完全统一；
 3. 仅使用提供的真实数据，不编造任何内容。"""
 
+                        # 展示AI分析报告（图文嵌排）
                         st.markdown("### 📋 AI标准化分析报告（图文嵌排）")
                         report_placeholder = st.empty()
                         full_report = ""
@@ -574,18 +640,22 @@ if df is not None and var_types is not None:
                         for chunk in stream:
                             current_text += chunk
                             full_report += chunk
+                            # 图文嵌排逻辑（无任何st.pyplot）
                             for chart in chart_names:
                                 if chart in current_text:
                                     split_text = current_text.split(chart, 1)
                                     report_placeholder.markdown(split_text[0], unsafe_allow_html=True)
+                                    # 渲染图表：image类型用st.image，plotly类型用st.plotly_chart
                                     if chart_data[chart]['type'] == 'image':
                                         st.image(chart_data[chart]['data'], use_container_width=True, key=f"img_{chart}")
                                     else:
                                         st.plotly_chart(chart_data[chart]['fig'], use_container_width=True, key=f"plotly_{chart}")
                                     current_text = split_text[1]
+                        # 渲染剩余文本
                         if current_text:
                             report_placeholder.markdown(current_text, unsafe_allow_html=True)
             
+            # AI统计问答
             with st.expander("❓ AI统计问答（固定格式）", expanded=False):
                 user_question = st.text_area("输入你的数据分析问题", placeholder="示例：分析A和B的相关性并解读；用t检验比较两组数据的均值差异；总结数据的核心分布特征", height=100)
                 if st.button("💬 发送问题") and user_question:
@@ -607,6 +677,7 @@ if df is not None and var_types is not None:
                     stream = call_deepseek_api(q_prompt, temperature=0.2)
                     st.write_stream(stream)
             
+            # AI结果解读
             with st.expander("📈 AI结果解读（固定格式）", expanded=False):
                 user_result = st.text_area("粘贴你的统计分析结果", placeholder="示例：皮尔逊相关系数0.78，p=0.001；t检验t=2.35，p=0.02；线性回归R²=0.82", height=100)
                 if st.button("🔍 解读结果") and user_result:
@@ -628,6 +699,7 @@ if df is not None and var_types is not None:
 4. 语言专业、简洁，适配科研数据分析场景，多次解读格式统一。"""
                     stream = call_deepseek_api(r_prompt, temperature=0.2)
                     st.write_stream(stream)
+# 未上传数据时的提示
 else:
     st.info("💡 请在【左侧边栏】上传CSV/Excel数据文件，即可开始全功能分析")
     st.markdown("#### 📌 核心功能亮点")
