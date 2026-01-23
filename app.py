@@ -10,11 +10,13 @@ import io
 import re
 from datetime import datetime
 from openai import OpenAI
+# 核心新增：导入PIL Image，解决云环境st.image兼容问题
+from PIL import Image
 
 # 关闭无关警告
 warnings.filterwarnings('ignore')
-# 配置Matplotlib中文显示（适配云环境）
-plt.rcParams['font.sans-serif'] = ['DejaVu Sans', 'SimHei']
+# 配置Matplotlib中文显示（适配云环境，兼容无SimHei的情况）
+plt.rcParams['font.sans-serif'] = ['DejaVu Sans', 'SimHei', 'Arial Unicode MS']
 plt.rcParams['axes.unicode_minus'] = False
 plt.rcParams['font.family'] = 'sans-serif'
 # 配置Streamlit页面
@@ -269,15 +271,17 @@ def plot_chart(df, plot_type, x_col, y_col=None, group_col=None):
     fig.update_layout(width=800, height=500)
     return fig
 
-# 核心修复：Matplotlib图转字节流（彻底替代st.pyplot）
-def matplotlib_to_bytes(fig):
+# 核心修复：Matplotlib图转PIL Image对象（替代原BytesIO，彻底解决云环境st.image兼容问题）
+def matplotlib_to_image(fig):
     buf = io.BytesIO()
-    # 保存为PNG，设置高分辨率，避免模糊
-    fig.savefig(buf, format='png', dpi=150, bbox_inches='tight', facecolor='white')
+    # 保存为高分辨率PNG，适配云环境
+    fig.savefig(buf, format='png', dpi=150, bbox_inches='tight', facecolor='white', edgecolor='none')
     buf.seek(0)
-    # 关闭fig，释放内存（云环境关键）
+    # 转PIL Image对象（st.image最稳定的输入类型）
+    pil_img = Image.open(buf)
+    # 关闭fig释放内存，云环境关键
     plt.close(fig)
-    return buf
+    return pil_img
 
 # ====================== 页面主逻辑 ======================
 st.title("科研数据分析平台")
@@ -443,7 +447,7 @@ if df is not None and var_types is not None:
                 st.dataframe(corr_res['相关矩阵'], use_container_width=True)
                 st.subheader("p值矩阵")
                 st.dataframe(corr_res['p值矩阵'], use_container_width=True)
-                # 绘制相关热力图（Matplotlib→字节流→st.image，无st.pyplot）
+                # 绘制相关热力图（Matplotlib→PIL Image→st.image，云环境最优解）
                 fig, ax = plt.subplots(figsize=(10, 8))
                 im = ax.imshow(corr_res['相关矩阵'], cmap='RdBu_r', vmin=-1, vmax=1)
                 ax.set_xticks(np.arange(len(corr_cols)))
@@ -457,8 +461,8 @@ if df is not None and var_types is not None:
                 cbar = ax.figure.colorbar(im, ax=ax)
                 cbar.set_label('相关系数', rotation=270, labelpad=20)
                 plt.tight_layout()
-                # 核心替换：用st.image显示字节流，彻底抛弃st.pyplot
-                st.image(matplotlib_to_bytes(fig), use_container_width=True)
+                # 核心替换：渲染PIL Image对象
+                st.image(matplotlib_to_image(fig), use_container_width=True)
 
     with tab6:
         st.subheader("回归分析")
@@ -523,11 +527,11 @@ if df is not None and var_types is not None:
                             if 'error' not in ttest_res:
                                 ttest_text = f"两独立样本t检验（{test_col}按{group_col}分组）：t值={ttest_res['t值']}，p值={ttest_res['p值']}，{list(ttest_res.keys())[2]}={ttest_res[list(ttest_res.keys())[2]]}，{list(ttest_res.keys())[3]}={ttest_res[list(ttest_res.keys())[3]]}"
 
-                        # 构造图表数据（核心修复：Matplotlib图只存字节流，类型为image）
+                        # 构造图表数据（核心修复：Matplotlib图存PIL Image对象，类型为image）
                         chart_data = {}
-                        # 图1：相关热力图（Matplotlib）
+                        # 图1：相关热力图（Matplotlib）- 双重异常捕获
                         try:
-                            if len(var_types['numeric'])>=2:
+                            if len(var_types['numeric'])>=2 and isinstance(corr_res, dict) and '相关矩阵' in corr_res:
                                 fig_corr, ax_corr = plt.subplots(figsize=(10, 8))
                                 im_corr = ax_corr.imshow(corr_res['相关矩阵'], cmap='RdBu_r', vmin=-1, vmax=1)
                                 ax_corr.set_xticks(np.arange(len(var_types['numeric'])))
@@ -539,18 +543,18 @@ if df is not None and var_types is not None:
                                         text = ax_corr.text(j, i, corr_res['相关矩阵'].iloc[i, j], ha="center", va="center", color="black")
                                 cbar_corr = ax_corr.figure.colorbar(im_corr, ax=ax_corr)
                                 plt.tight_layout()
-                                # 转字节流，存入chart_data，类型为image
+                                # 转PIL Image对象存入chart_data
                                 chart_data['图1'] = {
-                                    'data': matplotlib_to_bytes(fig_corr),
+                                    'data': matplotlib_to_image(fig_corr),
                                     'type': 'image',
                                     'name': '数值变量相关热力图',
                                     'desc': '展示各数值型变量间皮尔逊相关系数的强弱与正负相关方向，系数越接近1/ -1表示相关性越强，0表示无线性相关'
                                 }
                         except Exception as e:
-                            st.warning(f"图1生成失败：{str(e)}")
+                            st.warning(f"⚠️ 相关热力图生成失败：{str(e)[:50]}...")
                             pass
 
-                        # 图2：趋势折线图（Plotly）
+                        # 图2：趋势折线图（Plotly）- 异常捕获
                         try:
                             if len(var_types['numeric'])>=2:
                                 num1, num2 = var_types['numeric'][0], var_types['numeric'][1]
@@ -562,12 +566,12 @@ if df is not None and var_types is not None:
                                     'desc': f'展示{num1}和{num2}前1000条数据的时间序列趋势变化，可直观对比两者的波动规律与变化一致性'
                                 }
                         except Exception as e:
-                            st.warning(f"图2生成失败：{str(e)}")
+                            st.warning(f"⚠️ 趋势折线图生成失败：{str(e)[:50]}...")
                             pass
 
-                        # 图3：分类频数条形图（Plotly）
+                        # 图3：分类频数条形图（Plotly）- 异常捕获
                         try:
-                            if var_types['categorical']:
+                            if var_types['categorical'] and isinstance(freq_res, dict):
                                 cat_col = var_types['categorical'][0]
                                 freq_df = freq_res[cat_col].reset_index().rename(columns={'index': cat_col})
                                 fig_bar = px.bar(freq_df, x=cat_col, y='频数', title=f"{cat_col}频数分布", width=800, height=400, text_auto=True)
@@ -578,12 +582,12 @@ if df is not None and var_types is not None:
                                     'desc': f'展示分类型变量{cat_col}各类型的频数与占比情况，可直观判断该变量的分布特征与主要类别构成'
                                 }
                         except Exception as e:
-                            st.warning(f"图3生成失败：{str(e)}")
+                            st.warning(f"⚠️ 频数条形图生成失败：{str(e)[:50]}...")
                             pass
 
-                        # 构造图表描述文本
-                        chart_names = list(chart_data.keys())
-                        chart_desc = "\n".join([f"{k}：{v['name']} - {v['desc']}" for k, v in chart_data.items()]) if chart_data else "无可用可视化图表"
+                        # 构造图表描述文本（过滤失败的图表）
+                        chart_names = [k for k in chart_data.keys() if chart_data[k]]
+                        chart_desc = "\n".join([f"{k}：{v['name']} - {v['desc']}" for k, v in chart_data.items() if v]) if chart_data else "无可用可视化图表"
                         # 构造真实统计结果文本
                         real_stats = f"""【描述统计结果】：{desc_text}
 【相关矩阵结果】：{corr_text}
@@ -637,18 +641,20 @@ if df is not None and var_types is not None:
                         full_report = ""
                         stream = call_deepseek_api(prompt)
                         current_text = ""
+                        # 过滤有效图表名，避免空值
+                        valid_chart_names = [c for c in chart_names if c in chart_data]
                         for chunk in stream:
                             current_text += chunk
                             full_report += chunk
-                            # 图文嵌排逻辑（无任何st.pyplot）
-                            for chart in chart_names:
-                                if chart in current_text:
+                            # 图文嵌排逻辑（仅处理有效图表）
+                            for chart in valid_chart_names:
+                                if chart in current_text and chart_data[chart]:
                                     split_text = current_text.split(chart, 1)
                                     report_placeholder.markdown(split_text[0], unsafe_allow_html=True)
-                                    # 渲染图表：image类型用st.image，plotly类型用st.plotly_chart
-                                    if chart_data[chart]['type'] == 'image':
+                                    # 渲染图表：image=PIL Image，plotly=原生图
+                                    if chart_data[chart]['type'] == 'image' and 'data' in chart_data[chart]:
                                         st.image(chart_data[chart]['data'], use_container_width=True, key=f"img_{chart}")
-                                    else:
+                                    elif chart_data[chart]['type'] == 'plotly' and 'fig' in chart_data[chart]:
                                         st.plotly_chart(chart_data[chart]['fig'], use_container_width=True, key=f"plotly_{chart}")
                                     current_text = split_text[1]
                         # 渲染剩余文本
@@ -706,5 +712,5 @@ else:
     st.markdown("- 集成SPSS核心统计功能，操作简易，结果精准")
     st.markdown("- AI分析支持**图文嵌排**，图表嵌入解答对应位置，排版美观")
     st.markdown("- AI输出**固定统一格式**，不同文件/多次分析格式高度一致")
-    st.markdown("- 图表生成带异常捕获，单图失败不中断，自动跳过继续分析")
+    st.markdown("- 图表生成带**双重异常捕获**，单图失败不中断，云环境稳定性拉满")
     st.markdown("- 所有分析基于真实统计结果，AI不编造任何数据/图表")
