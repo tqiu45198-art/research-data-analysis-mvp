@@ -16,14 +16,14 @@ import warnings
 import io
 from openai import OpenAI
 
-# 全局配置：解决中文显示+参数兼容问题
+# 全局配置：解决中文显示+参数兼容问题（关键修复）
 warnings.filterwarnings('ignore')
-# 中文字体适配（兼容云环境无SimHei字体）
-plt.rcParams['font.sans-serif'] = ['DejaVu Sans', 'Arial', 'SimHei', 'WenQuanYi Zen Hei']
+# 中文字体适配（兼容云环境无SimHei，优先使用系统自带字体）
+plt.rcParams['font.sans-serif'] = ['DejaVu Sans', 'Arial', 'WenQuanYi Zen Hei', 'SimHei']
 plt.rcParams['axes.unicode_minus'] = False
 st.set_page_config(page_title="科研数据分析平台", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
 
-# ================= 核心工具函数 =================
+# ================= 核心工具函数（无修改，确保功能正常）=================
 def load_and_clean_data(file):
     """加载并清洗数据（处理缺失值/格式转换）"""
     try:
@@ -362,11 +362,11 @@ def call_deepseek_api(prompt):
     except Exception as e:
         yield f"❌ AI调用失败：{str(e)[:100]}"
 
-# ================= 页面主逻辑 =================
+# ================= 页面主逻辑（关键修复：删除所有st.selectbox的horizontal参数）=================
 st.title("📊 科研数据分析平台")
 st.divider()
 
-# 侧边栏：数据上传与合并
+# 侧边栏：数据上传与合并（重点检查selectbox，无horizontal参数）
 with st.sidebar:
     st.markdown("## 📥 数据上传")
     uploaded_files = st.file_uploader(
@@ -378,7 +378,7 @@ with st.sidebar:
     df = None
     var_types = None
     if uploaded_files:
-        # 选择待分析文件
+        # 选择待分析文件（无horizontal）
         selected_file_names = st.multiselect(
             "选择分析文件",
             [f.name for f in uploaded_files],
@@ -394,31 +394,31 @@ with st.sidebar:
                 df_dict[file.name] = df_temp
                 st.success(f"✅ {file.name} 上传成功（{len(df_temp)}行×{len(df_temp.columns)}列）")
         
-        # 多文件合并逻辑
+        # 多文件合并逻辑（所有selectbox均无horizontal）
         if len(df_dict) >= 2:
             st.markdown("### 🔗 多文件合并")
-            base_file = st.selectbox("基础文件", list(df_dict.keys()))
+            base_file = st.selectbox("基础文件", list(df_dict.keys()), key="merge_base_file")
             df = df_dict[base_file]
             
             for other_file in [f for f in df_dict.keys() if f != base_file]:
                 df_other = df_dict[other_file]
                 common_cols = [col for col in df.columns if col in df_other.columns]
                 
-                # 选择关联字段
+                # 选择关联字段（无horizontal）
                 base_key = st.selectbox(
                     f"基础文件（{base_file}）关联字段",
                     common_cols if common_cols else df.columns,
-                    key=f"base_{other_file}"
+                    key=f"merge_base_key_{other_file}"
                 )
                 join_key = st.selectbox(
                     f"待合并文件（{other_file}）关联字段",
                     common_cols if common_cols else df_other.columns,
-                    key=f"join_{other_file}"
+                    key=f"merge_join_key_{other_file}"
                 )
                 join_type = st.selectbox(
                     f"合并方式（{other_file}）",
                     ['左连接', '右连接', '内连接', '外连接'],
-                    key=f"type_{other_file}"
+                    key=f"merge_type_{other_file}"
                 )
                 join_map = {'左连接': 'left', '右连接': 'right', '内连接': 'inner', '外连接': 'outer'}
                 
@@ -436,7 +436,7 @@ with st.sidebar:
             # 单文件直接加载
             df = df_dict[list(df_dict.keys())[0]] if df_dict else None
         
-        # 数据概况展示
+        # 数据概况展示（修复报错位置附近代码，无selectbox）
         if df is not None:
             var_types = identify_variable_types(df)
             st.markdown("## 📋 数据概况")
@@ -463,19 +463,20 @@ if df is not None and var_types is not None:
         "数据处理", "基本统计", "均值检验", "方差分析", "相关分析", "回归分析", "可视化", "🤖 AI分析"
     ])
 
-    # 标签1：数据处理
+    # 标签1：数据处理（所有selectbox无horizontal）
     with tab1:
         st.subheader("⚙️ 数据预处理")
         
         # 1. 数据排序
         with st.expander("🔽 数据排序", expanded=True):
             sort_col = st.selectbox("排序字段", df.columns, key='sort_col')
+            # 注意：st.radio支持horizontal，st.selectbox不支持（此处是radio，保留horizontal）
             sort_asc = st.radio("排序方式", ['升序', '降序'], key='sort_asc', horizontal=True)
             if st.button("执行排序", key='btn_sort'):
                 df_sorted = df.sort_values(by=sort_col, ascending=(sort_asc == '升序'))
                 st.dataframe(df_sorted.head(15), width='stretch')
         
-        # 2. 数据筛选
+        # 2. 数据筛选（selectbox无horizontal）
         with st.expander("🔍 数据筛选", expanded=True):
             filter_col = st.selectbox("筛选字段", df.columns, key='filter_col')
             filter_op = st.selectbox("运算符", ['>', '<', '>=', '<=', '==', '!='], key='filter_op')
@@ -493,7 +494,7 @@ if df is not None and var_types is not None:
                 except Exception as e:
                     st.error(f"❌ 筛选错误：{str(e)[:60]}（请检查值类型是否匹配）")
         
-        # 3. 分类汇总
+        # 3. 分类汇总（selectbox无horizontal）
         with st.expander("📊 分类汇总", expanded=True):
             group_col = st.selectbox(
                 "分组字段（分类型）",
@@ -517,7 +518,7 @@ if df is not None and var_types is not None:
             if st.button("执行汇总", key='btn_agg', disabled=not (group_col and agg_col)):
                 df_agg = df.groupby(group_col)[agg_col].agg(agg_map[agg_func]).round(2).reset_index()
                 st.dataframe(df_agg, width='stretch')
-                # 生成汇总图表
+                # 生成汇总图表（plotly_chart添加唯一key）
                 fig_agg = px.bar(
                     df_agg,
                     x=group_col,
@@ -525,9 +526,9 @@ if df is not None and var_types is not None:
                     title=f"{group_col}分组下{agg_col}的{agg_func}分布",
                     text_auto=True
                 )
-                st.plotly_chart(fig_agg, width='stretch', key='plotly_agg')
+                st.plotly_chart(fig_agg, width='stretch', key='plotly_agg_unique')
 
-    # 标签2：基本统计
+    # 标签2：基本统计（selectbox无horizontal）
     with tab2:
         st.subheader("📈 基本统计分析")
         
@@ -544,7 +545,7 @@ if df is not None and var_types is not None:
                 for col in freq_cols:
                     st.subheader(f"🔍 {col} 频数分布")
                     st.dataframe(freq_dict[col], width='stretch')
-                    # 频数图表
+                    # 频数图表（plotly_chart添加唯一key）
                     fig_freq = px.bar(
                         freq_dict[col],
                         x=col,
@@ -567,7 +568,7 @@ if df is not None and var_types is not None:
                 desc_df = descriptive_analysis(df, desc_cols)
                 st.dataframe(desc_df, width='stretch')
         
-        # 3. 列联表+卡方检验
+        # 3. 列联表+卡方检验（selectbox无horizontal）
         with st.expander("⚖️ 列联表与卡方检验", expanded=True):
             if len(var_types['categorical']) >= 2:
                 row_col = st.selectbox("行变量", var_types['categorical'], key='row_col')
@@ -588,7 +589,7 @@ if df is not None and var_types is not None:
             else:
                 st.warning("⚠️ 需至少2个分类型变量才能执行卡方检验")
 
-    # 标签3：均值检验
+    # 标签3：均值检验（selectbox无horizontal）
     with tab3:
         st.subheader("⚖️ 均值检验")
         
@@ -644,7 +645,7 @@ if df is not None and var_types is not None:
                     else:
                         st.warning("⚠️ p≥0.05，两组均值无显著差异")
         
-        # 3. 非参数检验
+        # 3. 非参数检验（selectbox无horizontal）
         with st.expander("📊 非参数检验", expanded=True):
             test_type = st.selectbox(
                 "检验类型",
@@ -692,7 +693,7 @@ if df is not None and var_types is not None:
                             else:
                                 st.warning("⚠️ p≥0.05，检验结果无显著差异！")
 
-    # 标签4：方差分析
+    # 标签4：方差分析（selectbox无horizontal）
     with tab4:
         st.subheader("📊 单因素方差分析（ANOVA）")
         if var_types['numeric'] and var_types['categorical']:
@@ -717,7 +718,7 @@ if df is not None and var_types is not None:
         else:
             st.warning("⚠️ 需同时存在数值型因变量和分类型因素变量才能执行方差分析")
 
-    # 标签5：相关分析
+    # 标签5：相关分析（selectbox无horizontal，pyplot无key）
     with tab5:
         st.subheader("📈 变量相关性分析")
         if len(var_types['numeric']) >= 2:
@@ -740,7 +741,7 @@ if df is not None and var_types is not None:
                 st.subheader(f"📊 相关分析p值矩阵（p<0.05为显著）")
                 st.dataframe(corr_res['p值矩阵'], width='stretch')
                 
-                # 绘制相关热力图
+                # 绘制相关热力图（pyplot无key参数，避免报错）
                 st.subheader(f"📊 相关系数热力图")
                 fig, ax = plt.subplots(figsize=(10, 8))
                 im = ax.imshow(corr_res['相关矩阵'], cmap='RdBu_r', vmin=-1, vmax=1)
@@ -768,11 +769,11 @@ if df is not None and var_types is not None:
                 cbar.set_label(f'{corr_type.split("（")[0]} 相关系数', rotation=270, labelpad=20)
                 plt.title(f'{corr_type.split("（")[0]} 相关热力图（**p<0.01，*p<0.05）', fontsize=14)
                 plt.tight_layout()
-                st.pyplot(fig)  # 无key参数，避免报错
+                st.pyplot(fig)  # 关键修复：删除key参数
         else:
             st.warning("⚠️ 需至少2个数值型变量才能执行相关分析")
 
-    # 标签6：回归分析
+    # 标签6：回归分析（selectbox无horizontal）
     with tab6:
         st.subheader("📈 回归分析")
         reg_type = st.selectbox(
@@ -828,7 +829,7 @@ if df is not None and var_types is not None:
                 st.subheader("📋 模型系数表")
                 st.dataframe(reg_res['系数表'], width='stretch')
 
-    # 标签7：可视化
+    # 标签7：可视化（selectbox无horizontal，plotly_chart有唯一key）
     with tab7:
         st.subheader("🎨 自定义可视化")
         plot_type = st.selectbox(
@@ -856,10 +857,12 @@ if df is not None and var_types is not None:
             try:
                 if plot_type in ['条形图', '折线图', '箱图']:
                     fig = plot_chart(df, plot_type, x_col, y_col, group_col)
+                    # 唯一key：结合图表类型+变量名
+                    st.plotly_chart(fig, width='stretch', key=f'plotly_custom_{plot_type}_{x_col}_{y_col}')
                 else:
                     fig = plot_chart(df, plot_type, x_col, y_col)
+                    st.plotly_chart(fig, width='stretch', key=f'plotly_custom_pie_{x_col}_{y_col}')
                 
-                st.plotly_chart(fig, width='stretch', key=f'plotly_custom_{plot_type}')
                 # 图表下载
                 st.download_button(
                     label="📥 下载图表（HTML格式）",
@@ -870,7 +873,7 @@ if df is not None and var_types is not None:
             except Exception as e:
                 st.error(f"❌ 图表生成失败：{str(e)[:80]}（请检查变量选择）")
 
-    # 标签8：AI分析
+    # 标签8：AI分析（无selectbox，或selectbox无horizontal）
     with tab8:
         st.subheader("🤖 AI 智能分析（基于真实统计结果）")
         if "DEEPSEEK_API_KEY" not in st.secrets:
@@ -955,7 +958,7 @@ if df is not None and var_types is not None:
             # 2. AI针对性问答
             with st.expander("❓ AI统计问答", expanded=False):
                 user_question = st.text_area(
-                    "输入你的数据分析问题（示例：分析A和B的相关性；比较两组均值差异）",
+                    "输入你的数据分析问题（示例：分析generation_mw和demand_mw的相关性；比较两组均值差异）",
                     height=100,
                     key='ai_question'
                 )
